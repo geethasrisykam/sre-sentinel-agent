@@ -1,0 +1,31 @@
+{
+  "name": "sre-sentinel",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Autonomous incident-triage agent powered by Gemini 3, Google Cloud Agent Builder, and the Dynatrace MCP server.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "workspaces": [
+    "packages/shared",
+    "packages/orchestrator",
+    "packages/remediation-mcp",
+    "packages/dashboard"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "dev:orchestrator": "npm --workspace @sre-sentinel/orchestrator run dev",
+    "dev:remediation-mcp": "npm --workspace @sre-sentinel/remediation-mcp run dev",
+    "dev:dashboard": "npm --workspace @sre-sentinel/dashboard run dev",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4",
+    "tsx": "^4.16.2",
+    "@types/node": "^20.14.10"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  }
+}
