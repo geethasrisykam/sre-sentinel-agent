@@ -11,6 +11,7 @@ import { RemediationMcpClient } from './remediation.js';
 
 const SESSION_SECRET = 'a'.repeat(64);
 const PASSWORD = 'pw-for-tests-123';
+const WEBHOOK_TOKEN = 'dt-webhook-token-for-tests-1234567890';
 
 const FAKE_PROPOSAL: ProposedRemediation = {
   tool: 'restartPod',
@@ -67,6 +68,7 @@ async function buildApp(opts: {
   agent?: FakeAgent;
   remediation?: FakeRemediation;
   repo?: IncidentRepository;
+  webhookToken?: string | undefined;
 } = {}): Promise<{
   app: FastifyInstance;
   agent: FakeAgent;
@@ -76,6 +78,7 @@ async function buildApp(opts: {
   const repo = opts.repo ?? new IncidentRepository(':memory:');
   const agent = opts.agent ?? new FakeAgent();
   const remediation = opts.remediation ?? new FakeRemediation();
+  const webhookToken = 'webhookToken' in opts ? opts.webhookToken : WEBHOOK_TOKEN;
 
   const app = Fastify({ logger: false });
   await app.register(cookie, { secret: SESSION_SECRET });
@@ -86,6 +89,7 @@ async function buildApp(opts: {
     agent: agent as unknown as AgentRunner,
     remediation: remediation as unknown as RemediationMcpClient,
     sessionSecret: SESSION_SECRET,
+    webhookToken,
   });
   await app.ready();
   return { app, agent, remediation, repo };
@@ -340,5 +344,93 @@ describe('routes', () => {
       headers: { cookie },
     });
     expect(res.statusCode).toBe(404);
+  });
+});
+
+describe('POST /api/webhooks/dynatrace', () => {
+  it('rejects when no Authorization header is present', async () => {
+    const { app } = await buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/webhooks/dynatrace',
+      payload: { problemId: 'P-EXT-001' },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('rejects on wrong bearer token', async () => {
+    const { app } = await buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/webhooks/dynatrace',
+      headers: { authorization: 'Bearer not-the-real-token-aaaa' },
+      payload: { problemId: 'P-EXT-001' },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('rejects when no webhook token is configured (503)', async () => {
+    const { app } = await buildApp({ webhookToken: undefined });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/webhooks/dynatrace',
+      headers: { authorization: `Bearer ${WEBHOOK_TOKEN}` },
+      payload: { problemId: 'P-EXT-001' },
+    });
+    expect(res.statusCode).toBe(503);
+  });
+
+  it('accepts a real Dynatrace-shaped payload with valid bearer', async () => {
+    const ctx = await buildApp();
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/webhooks/dynatrace',
+      headers: { authorization: `Bearer ${WEBHOOK_TOKEN}` },
+      payload: {
+        ProblemID: 'P-LIVE-9876',
+        ProblemTitle: 'High response time on payments',
+        ProblemSeverity: 'PERFORMANCE',
+        ImpactedEntity: 'SERVICE-PAYMENTS-API',
+      },
+    });
+    expect(res.statusCode).toBe(202);
+    const { id } = res.json();
+    expect(typeof id).toBe('string');
+    const incident = await waitForState(ctx.repo, id, 'AWAITING_APPROVAL');
+    expect(incident.problemId).toBe('P-LIVE-9876');
+    expect(incident.problemTitle).toBe('High response time on payments');
+    expect(incident.affectedEntity).toBe('SERVICE-PAYMENTS-API');
+    expect(incident.severity).toBe('high'); // PERFORMANCE → high
+  });
+
+  it('accepts the camelCase shape too (problemId, problemTitle, etc.)', async () => {
+    const ctx = await buildApp();
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/webhooks/dynatrace',
+      headers: { authorization: `Bearer ${WEBHOOK_TOKEN}` },
+      payload: {
+        problemId: 'P-LIVE-LOWER',
+        problemTitle: 'CamelCase variant',
+        severity: 'critical',
+        affectedEntity: 'svc-x',
+      },
+    });
+    expect(res.statusCode).toBe(202);
+    const { id } = res.json();
+    const incident = await waitForState(ctx.repo, id, 'AWAITING_APPROVAL');
+    expect(incident.severity).toBe('critical');
+    expect(incident.problemTitle).toBe('CamelCase variant');
+  });
+
+  it('rejects payload that has neither problemId nor ProblemID', async () => {
+    const { app } = await buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/webhooks/dynatrace',
+      headers: { authorization: `Bearer ${WEBHOOK_TOKEN}` },
+      payload: { ProblemTitle: 'no id here' },
+    });
+    expect(res.statusCode).toBe(400);
   });
 });

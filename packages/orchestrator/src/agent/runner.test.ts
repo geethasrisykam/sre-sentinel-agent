@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { IncidentRecord } from '@sre-sentinel/shared';
 import { AgentRunner } from './runner.js';
 import type { GeminiClient, AgentTurnResponse } from './gemini.js';
+import { MockDiagnosisAdapter } from './mock-diagnosis.js';
 
 class StubGemini {
   private readonly queue: AgentTurnResponse[] = [];
@@ -69,7 +70,7 @@ describe('AgentRunner.diagnose', () => {
       .enqueue(toolResponse('getDeployments', { entityId: 'SERVICE-CHECKOUT-API', lookbackMinutes: 60 }))
       .enqueue(textResponse(VALID_PROPOSAL_JSON));
 
-    const runner = new AgentRunner(asGemini(stub));
+    const runner = new AgentRunner(asGemini(stub), new MockDiagnosisAdapter());
     const incident = makeIncident();
     const onTurn = vi.fn();
 
@@ -98,7 +99,7 @@ describe('AgentRunner.diagnose', () => {
       .enqueue(toolResponse('getProblem', { problemId: 'P-2026-05-25-001' }))
       .enqueue(textResponse('```json\n' + VALID_PROPOSAL_JSON + '\n```'));
 
-    const runner = new AgentRunner(asGemini(stub));
+    const runner = new AgentRunner(asGemini(stub), new MockDiagnosisAdapter());
     const proposal = await runner.diagnose(makeIncident());
     expect(proposal?.tool).toBe('restartPod');
   });
@@ -109,7 +110,7 @@ describe('AgentRunner.diagnose', () => {
       .enqueue(toolResponse('getProblem', { problemId: 'P-2026-05-25-001' }))
       .enqueue(textResponse('I think we should probably restart the pod.'));
 
-    const runner = new AgentRunner(asGemini(stub));
+    const runner = new AgentRunner(asGemini(stub), new MockDiagnosisAdapter());
     const incident = makeIncident();
     const proposal = await runner.diagnose(incident);
     expect(proposal).toBeNull();
@@ -121,7 +122,7 @@ describe('AgentRunner.diagnose', () => {
     const stub = new StubGemini();
     stub.enqueue({ toolCalls: [], text: null, rawCandidate: null });
 
-    const runner = new AgentRunner(asGemini(stub));
+    const runner = new AgentRunner(asGemini(stub), new MockDiagnosisAdapter());
     const incident = makeIncident();
     const proposal = await runner.diagnose(incident);
     expect(proposal).toBeNull();
@@ -134,7 +135,7 @@ describe('AgentRunner.diagnose', () => {
       .enqueue(toolResponse('getProblem', { problemId: 'does-not-exist' }))
       .enqueue(textResponse(VALID_PROPOSAL_JSON));
 
-    const runner = new AgentRunner(asGemini(stub));
+    const runner = new AgentRunner(asGemini(stub), new MockDiagnosisAdapter());
     const incident = makeIncident();
     const proposal = await runner.diagnose(incident);
 
@@ -144,6 +145,38 @@ describe('AgentRunner.diagnose', () => {
     expect((errorTurn?.toolResult?.data as { error: string }).error).toMatch(/No problem with problemId/);
   });
 
+  it('dispatches diagnosis tool calls through the injected adapter (not a global)', async () => {
+    const stub = new StubGemini();
+    stub
+      .enqueue(toolResponse('getProblem', { problemId: 'P-2026-05-25-001' }))
+      .enqueue(toolResponse('getDeployments', { entityId: 'svc-x', lookbackMinutes: 45 }))
+      .enqueue(toolResponse('getLogs', { entityId: 'svc-x', sinceMinutes: 5, limit: 7 }))
+      .enqueue(textResponse(VALID_PROPOSAL_JSON));
+
+    const calls: Array<{ tool: string; args: unknown }> = [];
+    const fakeAdapter = {
+      async getProblem(args: unknown) {
+        calls.push({ tool: 'getProblem', args });
+        return { problemId: 'P-2026-05-25-001', synthetic: true };
+      },
+      async getDeployments(args: unknown) {
+        calls.push({ tool: 'getDeployments', args });
+        return [];
+      },
+      async getLogs(args: unknown) {
+        calls.push({ tool: 'getLogs', args });
+        return [];
+      },
+    };
+
+    const runner = new AgentRunner(asGemini(stub), fakeAdapter);
+    await runner.diagnose(makeIncident());
+
+    expect(calls.map((c) => c.tool)).toEqual(['getProblem', 'getDeployments', 'getLogs']);
+    expect(calls[1]?.args).toEqual({ entityId: 'svc-x', lookbackMinutes: 45 });
+    expect(calls[2]?.args).toEqual({ entityId: 'svc-x', sinceMinutes: 5, limit: 7 });
+  });
+
   it('bails after MAX_TURNS without a final proposal', async () => {
     const stub = new StubGemini();
     // 6 tool-call turns; never produces text.
@@ -151,7 +184,7 @@ describe('AgentRunner.diagnose', () => {
       stub.enqueue(toolResponse('getProblem', { problemId: 'P-2026-05-25-001' }));
     }
 
-    const runner = new AgentRunner(asGemini(stub));
+    const runner = new AgentRunner(asGemini(stub), new MockDiagnosisAdapter());
     const incident = makeIncident();
     const proposal = await runner.diagnose(incident);
     expect(proposal).toBeNull();

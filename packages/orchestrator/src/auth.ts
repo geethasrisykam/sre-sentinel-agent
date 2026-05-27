@@ -83,3 +83,29 @@ export function requireSession(secret: string) {
     }
   };
 }
+
+// Auth scheme for inbound webhooks (Dynatrace can't send our session cookie,
+// but it can attach a custom Authorization header). Compares the bearer token
+// against the configured WEBHOOK_TOKEN with timingSafeEqual. If no token is
+// configured at all, every request is refused with 503 so an unconfigured
+// deployment doesn't silently accept anonymous webhook traffic.
+export function requireWebhookToken(expected: string | undefined) {
+  return async (request: FastifyRequest, reply: FastifyReply) => {
+    if (!expected) {
+      return reply.code(503).send({ error: 'webhook endpoint is not configured' });
+    }
+    const header = request.headers.authorization;
+    if (!header || !header.startsWith('Bearer ')) {
+      return reply.code(401).send({ error: 'bearer token required' });
+    }
+    const provided = header.slice('Bearer '.length).trim();
+    const expectedBuf = Buffer.from(expected);
+    const providedBuf = Buffer.from(provided);
+    if (expectedBuf.length !== providedBuf.length) {
+      return reply.code(401).send({ error: 'invalid token' });
+    }
+    if (!timingSafeEqual(expectedBuf, providedBuf)) {
+      return reply.code(401).send({ error: 'invalid token' });
+    }
+  };
+}

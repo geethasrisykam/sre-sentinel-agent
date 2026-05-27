@@ -1,8 +1,8 @@
 import type { Content, Part } from '@google/genai';
 import type { AgentTurn, IncidentRecord, ProposedRemediation } from '@sre-sentinel/shared';
 import { log } from '../logger.js';
+import type { DiagnosisAdapter } from './diagnosis-adapter.js';
 import { GeminiClient } from './gemini.js';
-import { getDeployments, getLogs, getProblem } from './mock-diagnosis.js';
 import { SYSTEM_PROMPT } from './prompt.js';
 
 const MAX_TURNS = 6;
@@ -10,7 +10,10 @@ const MAX_TURNS = 6;
 export type OnTurnFn = (incident: IncidentRecord) => void;
 
 export class AgentRunner {
-  constructor(private readonly gemini: GeminiClient) {}
+  constructor(
+    private readonly gemini: GeminiClient,
+    private readonly diagnosis: DiagnosisAdapter,
+  ) {}
 
   async diagnose(
     incident: IncidentRecord,
@@ -33,7 +36,7 @@ export class AgentRunner {
 
         const toolResponses: Part[] = [];
         for (const call of response.toolCalls) {
-          const result = this.executeDiagnosisTool(call.name, call.args);
+          const result = await this.executeDiagnosisTool(call.name, call.args);
           incident.agentTurns.push(this.recordTurn(call.name, call.args, result));
           onTurn(incident);
           toolResponses.push({
@@ -102,20 +105,25 @@ export class AgentRunner {
     ].join('\n');
   }
 
-  private executeDiagnosisTool(name: string, args: Record<string, unknown>): unknown {
+  private async executeDiagnosisTool(name: string, args: Record<string, unknown>): Promise<unknown> {
     log.info('agent.tool.call', { name, args });
     try {
       switch (name) {
         case 'getProblem':
-          return getProblem(String(args.problemId));
+          return await this.diagnosis.getProblem({
+            problemId: String(args.problemId),
+          });
         case 'getDeployments':
-          return getDeployments(String(args.entityId), Number(args.lookbackMinutes ?? 60));
+          return await this.diagnosis.getDeployments({
+            entityId: String(args.entityId),
+            lookbackMinutes: Number(args.lookbackMinutes ?? 60),
+          });
         case 'getLogs':
-          return getLogs(
-            String(args.entityId),
-            Number(args.sinceMinutes ?? 15),
-            Number(args.limit ?? 20),
-          );
+          return await this.diagnosis.getLogs({
+            entityId: String(args.entityId),
+            sinceMinutes: Number(args.sinceMinutes ?? 15),
+            limit: Number(args.limit ?? 20),
+          });
         default:
           return { error: `Unknown tool: ${name}` };
       }

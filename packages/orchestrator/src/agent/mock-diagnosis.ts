@@ -1,6 +1,13 @@
 // Phase 3 mock for the Dynatrace MCP server. The function names and shapes match
-// the real MCP tools so swapping to the live MCP in Phase 4 is just a transport
-// change — the agent code does not see a difference.
+// the real MCP tools so swapping to the live MCP via the DiagnosisAdapter
+// interface (see diagnosis-adapter.ts) is just a config flip.
+
+import type {
+  DiagnosisAdapter,
+  GetDeploymentsArgs,
+  GetLogsArgs,
+  GetProblemArgs,
+} from './diagnosis-adapter.js';
 
 export interface MockProblem {
   problemId: string;
@@ -164,4 +171,19 @@ export function ensureProblemExists(problemId: string): void {
 
 export function listSeededProblems(): MockProblem[] {
   return Object.values(PROBLEMS);
+}
+
+// DiagnosisAdapter implementation backed by the seeded fixtures above. Async
+// signatures match the real Dynatrace MCP client even though everything here
+// is synchronous — keeps the runner's await semantics consistent.
+export class MockDiagnosisAdapter implements DiagnosisAdapter {
+  async getProblem(args: GetProblemArgs): Promise<unknown> {
+    return getProblem(args.problemId);
+  }
+  async getDeployments(args: GetDeploymentsArgs): Promise<unknown> {
+    return getDeployments(args.entityId, args.lookbackMinutes);
+  }
+  async getLogs(args: GetLogsArgs): Promise<unknown> {
+    return getLogs(args.entityId, args.sinceMinutes, args.limit);
+  }
 }

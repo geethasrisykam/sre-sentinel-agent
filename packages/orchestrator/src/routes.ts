@@ -7,12 +7,30 @@ import { listSeededProblems, ensureProblemExists, getProblem } from './agent/moc
 import { IncidentRepository } from './db.js';
 import { log } from './logger.js';
 import { RemediationMcpClient } from './remediation.js';
-import { requireSession } from './auth.js';
+import { requireSession, requireWebhookToken } from './auth.js';
 
 const webhookBodySchema = z.object({
   problemId: z.string().min(1),
   // Real Dynatrace webhooks carry more fields; we accept and ignore them.
 });
+
+// Schema for the inbound Dynatrace webhook. Dynatrace's custom webhook
+// integration lets the configurator template arbitrary JSON; we accept both
+// the camelCase shape we use internally and the PascalCase shape Dynatrace's
+// default templates produce. Required keys: problemId. Everything else is
+// best-effort with safe defaults.
+const dynatraceWebhookBodySchema = z
+  .object({
+    problemId: z.string().min(1).optional(),
+    ProblemID: z.string().min(1).optional(),
+    problemTitle: z.string().optional(),
+    ProblemTitle: z.string().optional(),
+    severity: z.enum(['low', 'medium', 'high', 'critical']).optional(),
+    ProblemSeverity: z.string().optional(),
+    affectedEntity: z.string().optional(),
+    ImpactedEntity: z.string().optional(),
+  })
+  .passthrough();
 
 const approvalBodySchema = z.object({
   decision: z.enum(['approve', 'reject']),
@@ -25,10 +43,12 @@ interface Deps {
   agent: AgentRunner;
   remediation: RemediationMcpClient;
   sessionSecret: string;
+  webhookToken: string | undefined;
 }
 
 export function registerRoutes(app: FastifyInstance, deps: Deps): void {
   const guard = { preHandler: requireSession(deps.sessionSecret) };
+  const webhookGuard = { preHandler: requireWebhookToken(deps.webhookToken) };
 
   app.get('/healthz', async () => ({ ok: true, at: new Date().toISOString() }));
 
@@ -66,6 +86,39 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
     // Kick off diagnosis asynchronously so the webhook returns fast.
     void runDiagnosis(deps, incident);
 
+    return reply.code(202).send({ id: incident.id, state: incident.state });
+  });
+
+  // Inbound webhook for real Dynatrace alerts. Auth is bearer-token (no
+  // session cookie — Dynatrace can't send one). Unlike POST /api/incidents,
+  // this route does NOT validate against the seeded problem set: real
+  // Dynatrace IDs come from the live tenant and are arbitrary.
+  app.post('/api/webhooks/dynatrace', webhookGuard, async (request, reply) => {
+    const parsed = dynatraceWebhookBodySchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.flatten() });
+    }
+    const body = parsed.data;
+    const problemId = body.problemId ?? body.ProblemID;
+    if (!problemId) {
+      return reply.code(400).send({ error: 'problemId (or ProblemID) is required' });
+    }
+    const now = new Date().toISOString();
+    const incident: IncidentRecord = {
+      id: randomUUID(),
+      receivedAt: now,
+      updatedAt: now,
+      state: 'TRIAGING',
+      problemId,
+      problemTitle: body.problemTitle ?? body.ProblemTitle ?? `Dynatrace problem ${problemId}`,
+      affectedEntity: body.affectedEntity ?? body.ImpactedEntity ?? 'unknown',
+      severity: body.severity ?? mapDynatraceSeverity(body.ProblemSeverity) ?? 'high',
+      agentTurns: [],
+    };
+    deps.repo.insert(incident);
+    log.info('webhook.dynatrace.received', { id: incident.id, problemId });
+
+    void runDiagnosis(deps, incident);
     return reply.code(202).send({ id: incident.id, state: incident.state });
   });
 
@@ -192,6 +245,22 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
       return { ok: true, state: incident.state };
     },
   );
+}
+
+// Dynatrace's ProblemSeverity strings ("AVAILABILITY", "ERROR", "PERFORMANCE",
+// "RESOURCE_CONTENTION", "MONITORING_UNAVAILABLE", "INFO", etc.) don't map to
+// a numeric scale. This is a coarse mapping good enough for the dashboard
+// badge colour; tune at trial activation if a finer mapping is needed.
+function mapDynatraceSeverity(
+  raw: string | undefined,
+): 'low' | 'medium' | 'high' | 'critical' | undefined {
+  if (!raw) return undefined;
+  const upper = raw.toUpperCase();
+  if (upper === 'AVAILABILITY' || upper === 'ERROR') return 'critical';
+  if (upper === 'PERFORMANCE' || upper === 'RESOURCE_CONTENTION') return 'high';
+  if (upper === 'MONITORING_UNAVAILABLE') return 'medium';
+  if (upper === 'INFO') return 'low';
+  return undefined;
 }
 
 async function runDiagnosis(deps: Deps, incident: IncidentRecord): Promise<void> {

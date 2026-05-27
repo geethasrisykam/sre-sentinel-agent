@@ -13,6 +13,10 @@ export interface Config {
   sessionSecret: string;
   demoPassword: string;
   cookieSecure: boolean;
+  webhookToken: string | undefined;
+  diagnosisAdapter: 'mock' | 'dynatrace';
+  dynatraceEnvironmentUrl: string;
+  dynatraceApiToken: string;
   remediationMcpCommand: string;
   remediationMcpArgs: string[];
   remediationMcpCwd: string;
@@ -64,6 +68,28 @@ export function loadConfig(): Config {
         ? false
         : process.env.NODE_ENV === 'production';
 
+  // Webhook bearer token for /api/webhooks/dynatrace. Optional — if unset, the
+  // webhook endpoint refuses every request with 503 so a misconfigured deploy
+  // doesn't silently accept anonymous traffic.
+  const webhookToken = process.env.WEBHOOK_TOKEN?.trim() || undefined;
+  if (webhookToken && webhookToken.length < 16) {
+    throw new Error('WEBHOOK_TOKEN must be at least 16 characters when set.');
+  }
+
+  // Diagnosis adapter selection. Defaults to the in-process mock until both
+  // DYNATRACE_ENVIRONMENT_URL and DYNATRACE_API_TOKEN are configured; setting
+  // either one without the other is an error rather than a silent fallback.
+  const dynatraceEnvironmentUrl = process.env.DYNATRACE_ENVIRONMENT_URL?.trim() ?? '';
+  const dynatraceApiToken = process.env.DYNATRACE_API_TOKEN?.trim() ?? '';
+  const dtHasUrl = dynatraceEnvironmentUrl.length > 0;
+  const dtHasToken = dynatraceApiToken.length > 0;
+  if (dtHasUrl !== dtHasToken) {
+    throw new Error(
+      'DYNATRACE_ENVIRONMENT_URL and DYNATRACE_API_TOKEN must be set together (or both unset to use the mock adapter).',
+    );
+  }
+  const diagnosisAdapter: 'mock' | 'dynatrace' = dtHasUrl && dtHasToken ? 'dynatrace' : 'mock';
+
   return {
     port,
     logLevel: (process.env.ORCHESTRATOR_LOG_LEVEL as Config['logLevel']) || 'info',
@@ -73,6 +99,10 @@ export function loadConfig(): Config {
     sessionSecret,
     demoPassword,
     cookieSecure,
+    webhookToken,
+    diagnosisAdapter,
+    dynatraceEnvironmentUrl,
+    dynatraceApiToken,
     remediationMcpCommand: process.execPath,
     remediationMcpArgs: [resolve(remediationMcpDir, 'dist', 'index.js')],
     remediationMcpCwd: remediationMcpDir,

@@ -6,6 +6,9 @@ import { setLogLevel, log } from './logger.js';
 import { IncidentRepository } from './db.js';
 import { GeminiClient } from './agent/gemini.js';
 import { AgentRunner } from './agent/runner.js';
+import { MockDiagnosisAdapter } from './agent/mock-diagnosis.js';
+import { DynatraceMcpAdapter } from './agent/dynatrace-mcp-adapter.js';
+import type { DiagnosisAdapter } from './agent/diagnosis-adapter.js';
 import { RemediationMcpClient } from './remediation.js';
 import { registerAuth } from './auth.js';
 import { registerRoutes } from './routes.js';
@@ -35,7 +38,18 @@ async function main(): Promise<void> {
 
   const repo = new IncidentRepository(config.databasePath);
   const gemini = new GeminiClient(config.geminiApiKey, config.geminiModel);
-  const agent = new AgentRunner(gemini);
+
+  const diagnosis: DiagnosisAdapter =
+    config.diagnosisAdapter === 'dynatrace'
+      ? new DynatraceMcpAdapter({
+          environmentUrl: config.dynatraceEnvironmentUrl,
+          apiToken: config.dynatraceApiToken,
+        })
+      : new MockDiagnosisAdapter();
+  if (diagnosis.connect) await diagnosis.connect();
+  log.info('diagnosis.adapter.ready', { kind: config.diagnosisAdapter });
+
+  const agent = new AgentRunner(gemini, diagnosis);
   const remediation = new RemediationMcpClient(
     config.remediationMcpCommand,
     config.remediationMcpArgs,
@@ -57,12 +71,14 @@ async function main(): Promise<void> {
     agent,
     remediation,
     sessionSecret: config.sessionSecret,
+    webhookToken: config.webhookToken,
   });
 
   const shutdown = async (signal: string) => {
     log.info('shutdown.start', { signal });
     await app.close();
     await remediation.close();
+    if (diagnosis.close) await diagnosis.close();
     repo.close();
     log.info('shutdown.done');
     process.exit(0);
