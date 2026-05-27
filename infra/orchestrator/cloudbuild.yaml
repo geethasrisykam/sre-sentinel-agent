@@ -1,0 +1,49 @@
+# Cloud Build pipeline: build, push, deploy the orchestrator.
+# Submit with:
+#   gcloud builds submit --config infra/orchestrator/cloudbuild.yaml \
+#     --substitutions=_REGION=us-central1,_REPO=sre-sentinel
+#
+# Prerequisites (one-time):
+# - Artifact Registry repo:
+#     gcloud artifacts repositories create $_REPO --repository-format=docker \
+#       --location=$_REGION
+# - The Cloud Build service account needs run.developer + iam.serviceAccountUser
+#   on the orchestrator runtime SA.
+steps:
+  # 1. Build the multi-stage image.
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --file=infra/orchestrator/Dockerfile
+      - --tag=$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPO/orchestrator:$SHORT_SHA
+      - --tag=$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPO/orchestrator:latest
+      - .
+
+  # 2. Push both tags.
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - --all-tags
+      - $_REGION-docker.pkg.dev/$PROJECT_ID/$_REPO/orchestrator
+
+  # 3. Render service.yaml with the freshly-built image tag and apply.
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        IMAGE_TAG="$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPO/orchestrator:$SHORT_SHA"
+        sed -e "s|\$${IMAGE_TAG}|$$IMAGE_TAG|g" \
+            -e "s|\$${PROJECT_ID}|$PROJECT_ID|g" \
+            infra/orchestrator/service.yaml > /workspace/service.rendered.yaml
+        gcloud run services replace /workspace/service.rendered.yaml \
+          --region=$_REGION \
+          --quiet
+
+substitutions:
+  _REGION: us-central1
+  _REPO: sre-sentinel
+
+options:
+  logging: CLOUD_LOGGING_ONLY

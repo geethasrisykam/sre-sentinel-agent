@@ -23,9 +23,11 @@ export interface Config {
 }
 
 export function loadConfig(): Config {
-  const port = Number(process.env.ORCHESTRATOR_PORT ?? 8080);
+  // Cloud Run injects PORT; honour it as a fallback for our specific var.
+  const rawPort = process.env.ORCHESTRATOR_PORT ?? process.env.PORT ?? '8080';
+  const port = Number(rawPort);
   if (!Number.isFinite(port) || port < 1 || port > 65535) {
-    throw new Error(`ORCHESTRATOR_PORT must be a valid port number (got ${process.env.ORCHESTRATOR_PORT})`);
+    throw new Error(`ORCHESTRATOR_PORT/PORT must be a valid port number (got ${rawPort})`);
   }
 
   const geminiApiKey = process.env.GEMINI_API_KEY?.trim();

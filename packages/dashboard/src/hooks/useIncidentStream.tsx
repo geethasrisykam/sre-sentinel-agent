@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import type { IncidentRecord } from '@sre-sentinel/shared';
+import { apiUrl } from '../api/client';
 
 export type StreamStatus = 'connecting' | 'live' | 'reconnecting' | 'closed';
 
@@ -65,7 +66,7 @@ export function IncidentStreamProvider({
 
     const probeAuth = async (): Promise<'ok' | 'unauth' | 'unknown'> => {
       try {
-        const res = await fetch('/api/incidents', { credentials: 'include' });
+        const res = await fetch(apiUrl('/api/incidents'), { credentials: 'include' });
         if (res.status === 401) return 'unauth';
         if (res.ok) return 'ok';
         return 'unknown';
@@ -98,7 +99,7 @@ export function IncidentStreamProvider({
     };
 
     const connect = () => {
-      source = new EventSource('/api/incidents/stream', { withCredentials: true });
+      source = new EventSource(apiUrl('/api/incidents/stream'), { withCredentials: true });
 
       source.addEventListener('snapshot', (event) => {
         if (cancelled) return;

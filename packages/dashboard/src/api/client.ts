@@ -13,8 +13,19 @@ export class AuthRequiredError extends Error {
   }
 }
 
+// Base URL the dashboard uses for orchestrator requests. In dev, leave empty
+// so paths stay relative and Vite's /api proxy applies. In production behind
+// Firebase Hosting, also leave empty — firebase.json rewrites /api/** to the
+// Cloud Run service, keeping requests same-origin. Set VITE_API_BASE_URL only
+// when you need to point a build at a different orchestrator (e.g. a preview).
+export const apiBase = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
+
+export function apiUrl(path: string): string {
+  return apiBase ? `${apiBase}${path}` : path;
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(path, {
+  const response = await fetch(apiUrl(path), {
     ...init,
     credentials: 'include',
     headers: {
