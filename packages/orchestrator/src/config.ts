@@ -12,6 +12,7 @@ export interface Config {
   databasePath: string;
   sessionSecret: string;
   demoPassword: string;
+  cookieSecure: boolean;
   remediationMcpCommand: string;
   remediationMcpArgs: string[];
   remediationMcpCwd: string;
@@ -52,6 +53,17 @@ export function loadConfig(): Config {
   // Locate the remediation MCP package so we can spawn it as a child process.
   const remediationMcpDir = resolve(here, '..', '..', 'remediation-mcp');
 
+  // Cookie security: required behind HTTPS (Cloud Run, Firebase Hosting), but
+  // breaks local dev over http://localhost. Default tracks NODE_ENV; allow an
+  // explicit override for the rare case where the defaults are wrong.
+  const cookieSecureEnv = process.env.COOKIE_SECURE?.trim().toLowerCase();
+  const cookieSecure =
+    cookieSecureEnv === 'true'
+      ? true
+      : cookieSecureEnv === 'false'
+        ? false
+        : process.env.NODE_ENV === 'production';
+
   return {
     port,
     logLevel: (process.env.ORCHESTRATOR_LOG_LEVEL as Config['logLevel']) || 'info',
@@ -60,6 +72,7 @@ export function loadConfig(): Config {
     databasePath: resolve(dataDir, 'sentinel.db'),
     sessionSecret,
     demoPassword,
+    cookieSecure,
     remediationMcpCommand: process.execPath,
     remediationMcpArgs: [resolve(remediationMcpDir, 'dist', 'index.js')],
     remediationMcpCwd: remediationMcpDir,

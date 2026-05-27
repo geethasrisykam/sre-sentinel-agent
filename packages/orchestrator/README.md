@@ -12,8 +12,23 @@ every step to SQLite.
 | `POST` | `/api/incidents` | Dynatrace webhook — kicks off agent triage |
 | `GET`  | `/api/incidents` | List incidents (newest first) |
 | `GET`  | `/api/incidents/:id` | Full incident record incl. agent turns |
+| `GET`  | `/api/incidents/stream` | **SSE** — snapshot + live `incident.created` / `incident.updated` events |
 | `POST` | `/api/incidents/:id/approve` | Approve / reject / modify the proposed remediation |
 | `GET`  | `/healthz` | Liveness check |
+
+### Live reasoning stream
+
+`/api/incidents/stream` is a Server-Sent Events endpoint. On connect it pushes a
+`snapshot` event with the 50 most recent incidents, then per-record
+`incident.created` and `incident.updated` events as the agent runs. Every agent
+turn (each tool call, plus the final proposal) emits a fresh `incident.updated`
+event, so the dashboard's reasoning timeline animates as the agent thinks
+rather than jumping from empty to fully-populated.
+
+There's a quick end-to-end smoke test at
+`packages/orchestrator/scripts/sse-smoke.mjs` — start the orchestrator, then
+`node packages/orchestrator/scripts/sse-smoke.mjs` to log in, subscribe, fire a
+seeded problem, and watch events flow until `AWAITING_APPROVAL`.
 
 ## Run locally
 
@@ -26,6 +41,20 @@ npm run dev:orchestrator
 
 Server starts on `http://localhost:8080`. SQLite database lives at
 `packages/orchestrator/data/sentinel.db` (gitignored).
+
+## Tests
+
+```powershell
+npm run test --workspace @sre-sentinel/orchestrator
+# or watch mode
+npm run test:watch --workspace @sre-sentinel/orchestrator
+```
+
+Vitest covers four areas:
+- `events.test.ts` — pub/sub bus semantics, error isolation between subscribers
+- `db.test.ts` — repository CRUD against an in-memory SQLite database; event publishing on insert/update
+- `agent/runner.test.ts` — agent loop with a stubbed Gemini (tool-calling, JSON parse, error paths, MAX_TURNS)
+- `routes.test.ts` — full request/response coverage via `fastify.inject` with fake agent & remediation collaborators
 
 ## How the agent loop runs
 

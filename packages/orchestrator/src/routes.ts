@@ -79,6 +79,82 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
     return incident;
   });
 
+  app.get('/api/incidents/stream', guard, async (request, reply) => {
+    // Tell Fastify we'll write the response ourselves and keep the socket open.
+    reply.hijack();
+    reply.raw.writeHead(200, {
+      'content-type': 'text/event-stream',
+      'cache-control': 'no-cache, no-transform',
+      connection: 'keep-alive',
+      'x-accel-buffering': 'no', // disable nginx buffering if ever fronted by one
+    });
+
+    // Register cleanup BEFORE any subscribe/write so a TCP reset between
+    // writeHead() and subscribe() can't leak the event-bus handler.
+    let closed = false;
+    let unsubscribe: (() => void) | null = null;
+    let keepalive: NodeJS.Timeout | null = null;
+
+    const cleanup = () => {
+      if (closed) return;
+      closed = true;
+      if (keepalive) clearInterval(keepalive);
+      if (unsubscribe) unsubscribe();
+      log.info('sse.subscriber.disconnected', { remaining: deps.repo.events.size() });
+    };
+    request.raw.on('close', cleanup);
+    request.raw.on('error', cleanup);
+
+    const send = (event: string, data: unknown) => {
+      if (closed || reply.raw.destroyed) return;
+      try {
+        reply.raw.write(`event: ${event}\n`);
+        reply.raw.write(`data: ${JSON.stringify(data)}\n\n`);
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code === 'ERR_STREAM_DESTROYED' || code === 'EPIPE' || code === 'ECONNRESET') {
+          // Client disconnected mid-write; the 'close' handler will tear things down.
+          cleanup();
+          return;
+        }
+        // Real error (serialization bug, unexpected throw) — surface it.
+        log.warn('sse.write.failed', {
+          event,
+          code: code ?? null,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        cleanup();
+      }
+    };
+
+    // 1. Initial snapshot so a fresh subscriber sees what's already in flight.
+    send('snapshot', { incidents: deps.repo.listRecent(50) });
+    if (closed) return; // snapshot failed and torn down already
+
+    // 2. Subsequent live events.
+    unsubscribe = deps.repo.events.subscribe((event) => {
+      send(event.kind === 'created' ? 'incident.created' : 'incident.updated', {
+        incident: event.incident,
+        at: event.at,
+      });
+    });
+
+    // 3. Periodic comment frame keeps idle proxies from killing the connection.
+    keepalive = setInterval(() => {
+      if (closed || reply.raw.destroyed) {
+        cleanup();
+        return;
+      }
+      try {
+        reply.raw.write(': keepalive\n\n');
+      } catch {
+        cleanup();
+      }
+    }, 25_000);
+
+    log.info('sse.subscriber.connected', { total: deps.repo.events.size() });
+  });
+
   app.post<{ Params: { id: string } }>(
     '/api/incidents/:id/approve',
     guard,
@@ -119,17 +195,27 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
 }
 
 async function runDiagnosis(deps: Deps, incident: IncidentRecord): Promise<void> {
+  const started = Date.now();
   try {
-    const proposal = await deps.agent.diagnose(incident);
+    const proposal = await deps.agent.diagnose(incident, (i) => {
+      i.updatedAt = new Date().toISOString();
+      deps.repo.update(i);
+    });
     if (!proposal) {
+      // The runner appends a "Diagnosis aborted: <reason>" turn before returning
+      // null. Surface that reason instead of a generic "couldn't produce".
+      const lastTurn = incident.agentTurns.at(-1);
+      const summary = lastTurn?.thought?.startsWith('Diagnosis aborted:')
+        ? lastTurn.thought
+        : 'Agent could not produce a structured remediation proposal.';
       incident.state = 'FAILED';
       incident.outcome = {
         success: false,
-        summary: 'Agent could not produce a structured remediation proposal.',
-        durationMs: 0,
+        summary,
+        durationMs: Date.now() - started,
       };
     } else {
-      incident.proposedRemediation = proposal;
+      // The runner has already attached proposedRemediation; we just transition state.
       incident.state = 'AWAITING_APPROVAL';
     }
     incident.updatedAt = new Date().toISOString();
@@ -138,7 +224,11 @@ async function runDiagnosis(deps: Deps, incident: IncidentRecord): Promise<void>
   } catch (err) {
     log.error('incident.triage.error', { id: incident.id, error: String(err) });
     incident.state = 'FAILED';
-    incident.outcome = { success: false, summary: String(err), durationMs: 0 };
+    incident.outcome = {
+      success: false,
+      summary: err instanceof Error ? err.message : String(err),
+      durationMs: Date.now() - started,
+    };
     incident.updatedAt = new Date().toISOString();
     deps.repo.update(incident);
   }

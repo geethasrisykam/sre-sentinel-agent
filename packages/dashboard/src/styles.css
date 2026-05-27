@@ -1,0 +1,44 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+  body {
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply rounded-xl border border-slate-800/80 bg-slate-900/60 backdrop-blur-sm shadow-lg shadow-black/30;
+  }
+  .btn {
+    @apply rounded-md px-4 py-2 text-sm font-medium transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn bg-cyan-600 text-white hover:bg-cyan-500;
+  }
+  .btn-secondary {
+    @apply btn border border-slate-700 bg-slate-800/60 text-slate-200 hover:bg-slate-800;
+  }
+  .btn-danger {
+    @apply btn border border-red-900/60 bg-red-950/40 text-red-300 hover:bg-red-900/60;
+  }
+  .btn-success {
+    @apply btn border border-emerald-700/50 bg-emerald-600/90 text-white hover:bg-emerald-500;
+  }
+}
+
+/* subtle scanline texture for the header bar — vague observability vibe */
+.scanline {
+  background-image: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.02) 0px,
+    rgba(255, 255, 255, 0.02) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+}

@@ -7,10 +7,15 @@ import { SYSTEM_PROMPT } from './prompt.js';
 
 const MAX_TURNS = 6;
 
+export type OnTurnFn = (incident: IncidentRecord) => void;
+
 export class AgentRunner {
   constructor(private readonly gemini: GeminiClient) {}
 
-  async diagnose(incident: IncidentRecord): Promise<ProposedRemediation | null> {
+  async diagnose(
+    incident: IncidentRecord,
+    onTurn: OnTurnFn = () => undefined,
+  ): Promise<ProposedRemediation | null> {
     const initialPrompt = this.buildInitialPrompt(incident);
     const contents: Content[] = [
       { role: 'user', parts: [{ text: initialPrompt }] },
@@ -30,6 +35,7 @@ export class AgentRunner {
         for (const call of response.toolCalls) {
           const result = this.executeDiagnosisTool(call.name, call.args);
           incident.agentTurns.push(this.recordTurn(call.name, call.args, result));
+          onTurn(incident);
           toolResponses.push({
             functionResponse: {
               name: call.name,
@@ -46,23 +52,41 @@ export class AgentRunner {
       if (response.text) {
         const proposal = this.parseProposal(response.text);
         if (proposal) {
+          // Attach the proposal to the incident BEFORE emitting the final turn,
+          // so downstream subscribers see a complete record in one frame.
+          incident.proposedRemediation = proposal;
           incident.agentTurns.push({
             at: new Date().toISOString(),
             thought: 'Final remediation proposed.',
           });
+          onTurn(incident);
           return proposal;
         }
+        const reason = `Final response was not a valid remediation proposal: ${truncate(response.text, 200)}`;
+        this.recordFailure(incident, reason, onTurn);
         log.warn('agent.parse.failed', { incidentId: incident.id, text: response.text });
         return null;
       }
 
       // Neither tool nor text — bail out
+      const reason = 'Model returned no tool call and no text. Cannot continue.';
+      this.recordFailure(incident, reason, onTurn);
       log.warn('agent.empty.response', { incidentId: incident.id, turn });
       return null;
     }
 
+    const reason = `Reached the ${MAX_TURNS}-turn investigation cap without producing a proposal.`;
+    this.recordFailure(incident, reason, onTurn);
     log.warn('agent.max.turns.exceeded', { incidentId: incident.id });
     return null;
+  }
+
+  private recordFailure(incident: IncidentRecord, reason: string, onTurn: OnTurnFn): void {
+    incident.agentTurns.push({
+      at: new Date().toISOString(),
+      thought: `Diagnosis aborted: ${reason}`,
+    });
+    onTurn(incident);
   }
 
   private buildInitialPrompt(incident: IncidentRecord): string {
@@ -133,4 +157,9 @@ export class AgentRunner {
     }
     return null;
   }
+}
+
+function truncate(text: string, maxLen: number): string {
+  if (text.length <= maxLen) return text;
+  return text.slice(0, maxLen) + '…';
 }

@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import type { Database as DatabaseT } from 'better-sqlite3';
 import type { IncidentRecord, IncidentState } from '@sre-sentinel/shared';
+import { IncidentEventBus } from './events.js';
 import { log } from './logger.js';
 
 const SCHEMA = `
@@ -22,11 +23,13 @@ CREATE INDEX IF NOT EXISTS idx_incidents_state ON incidents(state);
 
 export class IncidentRepository {
   private readonly db: DatabaseT;
+  readonly events: IncidentEventBus;
 
-  constructor(databasePath: string) {
+  constructor(databasePath: string, events: IncidentEventBus = new IncidentEventBus()) {
     this.db = new Database(databasePath);
     this.db.pragma('journal_mode = WAL');
     this.db.exec(SCHEMA);
+    this.events = events;
     log.info('db.ready', { path: databasePath });
   }
 
@@ -48,6 +51,7 @@ export class IncidentRepository {
       severity: record.severity,
       recordJson: JSON.stringify(record),
     });
+    this.events.publish('created', record);
   }
 
   update(record: IncidentRecord): void {
@@ -67,6 +71,7 @@ export class IncidentRepository {
     if (info.changes === 0) {
       throw new Error(`No incident with id=${record.id}`);
     }
+    this.events.publish('updated', record);
   }
 
   findById(id: string): IncidentRecord | null {

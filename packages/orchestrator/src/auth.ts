@@ -37,7 +37,7 @@ function decode(token: string, secret: string): SessionPayload | null {
 
 export function registerAuth(
   app: FastifyInstance,
-  config: { sessionSecret: string; demoPassword: string },
+  config: { sessionSecret: string; demoPassword: string; cookieSecure?: boolean },
 ): void {
   app.post<{ Body: { password: string } }>('/api/auth/login', async (request, reply) => {
     const { password } = request.body ?? {};
@@ -56,7 +56,9 @@ export function registerAuth(
     reply.setCookie(COOKIE_NAME, token, {
       httpOnly: true,
       sameSite: 'lax',
-      secure: false, // flip to true behind HTTPS in prod
+      // Driven by config.cookieSecure (NODE_ENV=production unless explicitly
+      // overridden via COOKIE_SECURE). Required behind HTTPS; breaks localhost.
+      secure: config.cookieSecure ?? false,
       path: '/',
       maxAge: SESSION_TTL_MS / 1000,
     });

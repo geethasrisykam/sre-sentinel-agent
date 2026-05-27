@@ -14,6 +14,25 @@ async function main(): Promise<void> {
   const config = loadConfig();
   setLogLevel(config.logLevel);
 
+  // Surface async failures that escape fire-and-forget call sites
+  // (runDiagnosis, runRemediation, SSE handlers). Without these, a rejection
+  // disappears under Node's default and a stuck incident has no log trail.
+  process.on('unhandledRejection', (reason) => {
+    log.error('process.unhandled.rejection', {
+      reason: reason instanceof Error ? reason.message : String(reason),
+      stack: reason instanceof Error ? reason.stack : undefined,
+    });
+  });
+  process.on('uncaughtException', (err) => {
+    log.error('process.uncaught.exception', {
+      error: err.message,
+      stack: err.stack,
+    });
+    // Uncaught exceptions leave the runtime in an undefined state — exit so the
+    // platform (Cloud Run / supervisor) restarts us cleanly.
+    process.exit(1);
+  });
+
   const repo = new IncidentRepository(config.databasePath);
   const gemini = new GeminiClient(config.geminiApiKey, config.geminiModel);
   const agent = new AgentRunner(gemini);
@@ -31,6 +50,7 @@ async function main(): Promise<void> {
   registerAuth(app, {
     sessionSecret: config.sessionSecret,
     demoPassword: config.demoPassword,
+    cookieSecure: config.cookieSecure,
   });
   registerRoutes(app, {
     repo,
