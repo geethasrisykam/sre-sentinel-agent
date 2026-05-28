@@ -34,8 +34,11 @@ describe('IncidentRepository', () => {
     repo.insert(inc);
     expect(repo.findById('inc-1')).toEqual(inc);
     expect(captured).toHaveLength(1);
-    expect(captured[0]?.kind).toBe('created');
-    expect(captured[0]?.incident.id).toBe('inc-1');
+    const first = captured[0];
+    expect(first?.kind).toBe('created');
+    if (first?.kind !== 'reset') {
+      expect(first?.incident.id).toBe('inc-1');
+    }
   });
 
   it('updates an existing record and publishes an updated event', () => {
@@ -79,5 +82,18 @@ describe('IncidentRepository', () => {
     expect(repo.countByState('TRIAGING')).toBe(2);
     expect(repo.countByState('RESOLVED')).toBe(1);
     expect(repo.countByState('FAILED')).toBe(0);
+  });
+
+  it('clearAll deletes every row and publishes a reset event', () => {
+    repo.insert(makeIncident({ id: 'a' }));
+    repo.insert(makeIncident({ id: 'b' }));
+    // Drop the two 'created' events recorded by beforeEach's subscriber so the
+    // assertion below sees only what clearAll publishes.
+    captured.length = 0;
+
+    const deleted = repo.clearAll();
+    expect(deleted).toBe(2);
+    expect(repo.listRecent(10)).toEqual([]);
+    expect(captured.map((e) => e.kind)).toEqual(['reset']);
   });
 });

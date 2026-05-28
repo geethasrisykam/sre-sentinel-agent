@@ -1,13 +1,9 @@
 import type { IncidentRecord } from '@sre-sentinel/shared';
 import { log } from './logger.js';
 
-export type IncidentEventKind = 'created' | 'updated';
-
-export interface IncidentEvent {
-  kind: IncidentEventKind;
-  incident: IncidentRecord;
-  at: string;
-}
+export type IncidentEvent =
+  | { kind: 'created' | 'updated'; incident: IncidentRecord; at: string }
+  | { kind: 'reset'; at: string };
 
 export type IncidentEventHandler = (event: IncidentEvent) => void;
 
@@ -21,12 +17,17 @@ export class IncidentEventBus {
     };
   }
 
-  publish(kind: IncidentEventKind, incident: IncidentRecord): void {
-    const event: IncidentEvent = {
-      kind,
-      incident,
-      at: new Date().toISOString(),
-    };
+  publish(kind: 'created' | 'updated', incident: IncidentRecord): void {
+    this.dispatch({ kind, incident, at: new Date().toISOString() });
+  }
+
+  // Broadcast that the incident store has been wiped (operator hit the demo
+  // reset). Dashboards drop their cached state and re-snapshot from empty.
+  publishReset(): void {
+    this.dispatch({ kind: 'reset', at: new Date().toISOString() });
+  }
+
+  private dispatch(event: IncidentEvent): void {
     for (const handler of this.handlers) {
       try {
         handler(event);
@@ -35,7 +36,7 @@ export class IncidentEventBus {
         // but it must not vanish without a trace either.
         log.warn('events.subscriber.threw', {
           kind: event.kind,
-          incidentId: event.incident.id,
+          incidentId: event.kind === 'reset' ? undefined : event.incident.id,
           error: err instanceof Error ? err.message : String(err),
         });
       }

@@ -126,6 +126,14 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
     incidents: deps.repo.listRecent(50),
   }));
 
+  // Demo reset — wipes all incidents. Session-auth only (operators do this
+  // between demo takes, not Dynatrace).
+  app.delete('/api/incidents', guard, async () => {
+    const deleted = deps.repo.clearAll();
+    log.info('incidents.cleared', { deleted });
+    return { ok: true, deleted };
+  });
+
   app.get<{ Params: { id: string } }>('/api/incidents/:id', guard, async (request, reply) => {
     const incident = deps.repo.findById(request.params.id);
     if (!incident) return reply.code(404).send({ error: 'incident not found' });
@@ -186,6 +194,10 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
 
     // 2. Subsequent live events.
     unsubscribe = deps.repo.events.subscribe((event) => {
+      if (event.kind === 'reset') {
+        send('incidents.reset', { at: event.at });
+        return;
+      }
       send(event.kind === 'created' ? 'incident.created' : 'incident.updated', {
         incident: event.incident,
         at: event.at,

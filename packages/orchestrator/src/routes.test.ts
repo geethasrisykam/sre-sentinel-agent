@@ -345,6 +345,36 @@ describe('routes', () => {
     });
     expect(res.statusCode).toBe(404);
   });
+
+  it('DELETE /api/incidents wipes everything and reports the count', async () => {
+    const cookie = await login(ctx.app);
+    // Seed by firing two webhooks and waiting for them to land in AWAITING_APPROVAL.
+    for (const problemId of ['P-2026-05-25-001', 'P-2026-05-25-002']) {
+      const fire = await ctx.app.inject({
+        method: 'POST',
+        url: '/api/incidents',
+        headers: { cookie },
+        payload: { problemId },
+      });
+      const { id } = fire.json();
+      await waitForState(ctx.repo, id, 'AWAITING_APPROVAL');
+    }
+    expect(ctx.repo.listRecent(10)).toHaveLength(2);
+
+    const res = await ctx.app.inject({
+      method: 'DELETE',
+      url: '/api/incidents',
+      headers: { cookie },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true, deleted: 2 });
+    expect(ctx.repo.listRecent(10)).toHaveLength(0);
+  });
+
+  it('DELETE /api/incidents requires authentication', async () => {
+    const res = await ctx.app.inject({ method: 'DELETE', url: '/api/incidents' });
+    expect(res.statusCode).toBe(401);
+  });
 });
 
 describe('POST /api/webhooks/dynatrace', () => {

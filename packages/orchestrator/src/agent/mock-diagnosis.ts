@@ -64,6 +64,50 @@ const PROBLEMS: Record<string, MockProblem> = {
     ],
     firstSeenAt: new Date(Date.now() - 14 * 60_000).toISOString(),
   },
+  'P-2026-05-25-003': {
+    problemId: 'P-2026-05-25-003',
+    title: 'Request queue depth alert on inventory-search',
+    severity: 'high',
+    affectedEntities: [
+      { entityId: 'SERVICE-INVENTORY-SEARCH', name: 'inventory-search', type: 'SERVICE' },
+    ],
+    detectionSignals: [
+      'Pending request queue depth above 800 for 4 minutes (autoscaler max=8)',
+      'CPU pinned at 94% across all 8 replicas',
+      'Inbound RPS up 3.4× from 7-day baseline — marketing push correlated',
+      'No deploy in the last 6 hours; code path is healthy',
+    ],
+    firstSeenAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+  },
+  'P-2026-05-25-004': {
+    problemId: 'P-2026-05-25-004',
+    title: 'Auth failures spiking on identity-service',
+    severity: 'critical',
+    affectedEntities: [
+      { entityId: 'SERVICE-IDENTITY', name: 'identity-service', type: 'SERVICE' },
+    ],
+    detectionSignals: [
+      '401 rate jumped from 0.1% to 38% within 90 seconds of v3.7.2 deploy',
+      'JWT validation errors dominate the log mix (>2k/min)',
+      'Tightly correlated with config push at 11:42 UTC; key rotation reference appears in deploy notes',
+    ],
+    firstSeenAt: new Date(Date.now() - 7 * 60_000).toISOString(),
+  },
+  'P-2026-05-25-005': {
+    problemId: 'P-2026-05-25-005',
+    title: 'Thread pool saturation on notifications-worker',
+    severity: 'medium',
+    affectedEntities: [
+      { entityId: 'SERVICE-NOTIFICATIONS-WORKER', name: 'notifications-worker', type: 'SERVICE' },
+    ],
+    detectionSignals: [
+      'Worker thread pool at 100% utilization for 12 minutes',
+      'Outbound webhook calls timing out (p95 → 28s)',
+      'Memory and CPU within normal bands — looks like a stuck-thread leak',
+      'No deploys in the last 36 hours',
+    ],
+    firstSeenAt: new Date(Date.now() - 12 * 60_000).toISOString(),
+  },
 };
 
 const DEPLOYMENTS: Record<string, MockDeployment[]> = {
@@ -95,6 +139,48 @@ const DEPLOYMENTS: Record<string, MockDeployment[]> = {
       deployedAt: new Date(Date.now() - 50 * 60 * 60_000).toISOString(),
       deployedBy: 'release-bot',
       commitSha: '3ee29f1',
+      rolledOut: true,
+    },
+  ],
+  'SERVICE-INVENTORY-SEARCH': [
+    {
+      deploymentId: 'dep-2026-05-25-e07',
+      version: 'v1.9.4',
+      serviceName: 'inventory-search',
+      deployedAt: new Date(Date.now() - 6 * 60 * 60_000).toISOString(),
+      deployedBy: 'release-bot',
+      commitSha: 'a11b9c0',
+      rolledOut: true,
+    },
+  ],
+  'SERVICE-IDENTITY': [
+    {
+      deploymentId: 'dep-2026-05-25-f33',
+      version: 'v3.7.2',
+      serviceName: 'identity-service',
+      deployedAt: new Date(Date.now() - 8 * 60_000).toISOString(),
+      deployedBy: 'release-bot',
+      commitSha: '5d2af18',
+      rolledOut: true,
+    },
+    {
+      deploymentId: 'dep-2026-05-24-f29',
+      version: 'v3.7.1',
+      serviceName: 'identity-service',
+      deployedAt: new Date(Date.now() - 30 * 60 * 60_000).toISOString(),
+      deployedBy: 'release-bot',
+      commitSha: '5cf801e',
+      rolledOut: true,
+    },
+  ],
+  'SERVICE-NOTIFICATIONS-WORKER': [
+    {
+      deploymentId: 'dep-2026-05-24-g08',
+      version: 'v2.0.3',
+      serviceName: 'notifications-worker',
+      deployedAt: new Date(Date.now() - 36 * 60 * 60_000).toISOString(),
+      deployedBy: 'release-bot',
+      commitSha: 'fa9012d',
       rolledOut: true,
     },
   ],
@@ -139,6 +225,66 @@ const LOGS: Record<string, MockLogLine[]> = {
       level: 'WARN',
       service: 'payment-gateway',
       message: 'GC pause 845ms (Old Gen, paused 8 worker threads)',
+    },
+  ],
+  'SERVICE-INVENTORY-SEARCH': [
+    {
+      at: new Date(Date.now() - 5 * 60_000).toISOString(),
+      level: 'WARN',
+      service: 'inventory-search',
+      message: 'Request queue depth=812 (threshold 500). Workers all busy.',
+    },
+    {
+      at: new Date(Date.now() - 4 * 60_000).toISOString(),
+      level: 'WARN',
+      service: 'inventory-search',
+      message: 'Autoscaler held at maxReplicas=8; pending=1.2k. Throttle headroom = 0.',
+    },
+    {
+      at: new Date(Date.now() - 2 * 60_000).toISOString(),
+      level: 'INFO',
+      service: 'inventory-search',
+      message: 'Inbound RPS 3,810 (7d baseline 1,120). Origin: campaign-banner=true.',
+    },
+  ],
+  'SERVICE-IDENTITY': [
+    {
+      at: new Date(Date.now() - 6 * 60_000).toISOString(),
+      level: 'ERROR',
+      service: 'identity-service',
+      message: 'JWT verify failed: signature mismatch (kid="2026-Q2-rotation")',
+    },
+    {
+      at: new Date(Date.now() - 5 * 60_000).toISOString(),
+      level: 'ERROR',
+      service: 'identity-service',
+      message: 'JWKSCache: requested kid=2026-Q2-rotation not present; cache miss',
+    },
+    {
+      at: new Date(Date.now() - 4 * 60_000).toISOString(),
+      level: 'FATAL',
+      service: 'identity-service',
+      message: 'Hot config reload (v3.7.2) replaced jwt.publicKey but downstream pool kept old kid',
+    },
+  ],
+  'SERVICE-NOTIFICATIONS-WORKER': [
+    {
+      at: new Date(Date.now() - 11 * 60_000).toISOString(),
+      level: 'WARN',
+      service: 'notifications-worker',
+      message: 'Thread pool=32/32 in use; queue depth=480 and growing',
+    },
+    {
+      at: new Date(Date.now() - 7 * 60_000).toISOString(),
+      level: 'ERROR',
+      service: 'notifications-worker',
+      message: 'Outbound webhook https://partner.example.com timed out after 28000ms (default 5000ms)',
+    },
+    {
+      at: new Date(Date.now() - 3 * 60_000).toISOString(),
+      level: 'ERROR',
+      service: 'notifications-worker',
+      message: 'Detected 27 worker threads blocked on socket read for >5min — looks like a leak',
     },
   ],
 };

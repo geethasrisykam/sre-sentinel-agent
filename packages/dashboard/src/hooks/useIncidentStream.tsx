@@ -118,6 +118,10 @@ export function IncidentStreamProvider({
       };
       source.addEventListener('incident.created', handleIncidentFrame('incident.created'));
       source.addEventListener('incident.updated', handleIncidentFrame('incident.updated'));
+      source.addEventListener('incidents.reset', () => {
+        if (cancelled) return;
+        setIncidents(new Map());
+      });
 
       source.onerror = () => {
         if (cancelled) return;

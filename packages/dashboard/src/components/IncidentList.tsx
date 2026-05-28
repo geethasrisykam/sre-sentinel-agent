@@ -26,6 +26,7 @@ export function IncidentList({ onOpen, onAuthLost }: Props) {
   const { incidents, status, ready } = useIncidents();
   const [problems, setProblems] = useState<SeededProblem[]>([]);
   const [firing, setFiring] = useState(false);
+  const [clearing, setClearing] = useState(false);
 
   useEffect(() => {
     api.listSeededProblems().then(setProblems).catch(() => undefined);
@@ -39,6 +40,20 @@ export function IncidentList({ onOpen, onAuthLost }: Props) {
       if (err instanceof AuthRequiredError) onAuthLost();
     } finally {
       setFiring(false);
+    }
+  }
+
+  async function clearAll() {
+    if (incidents.length === 0) return;
+    if (!window.confirm(`Clear all ${incidents.length} incidents? This cannot be undone.`)) return;
+    setClearing(true);
+    try {
+      await api.clearAllIncidents();
+      // SSE 'incidents.reset' event drops local state in lockstep.
+    } catch (err) {
+      if (err instanceof AuthRequiredError) onAuthLost();
+    } finally {
+      setClearing(false);
     }
   }
 
@@ -73,9 +88,21 @@ export function IncidentList({ onOpen, onAuthLost }: Props) {
           <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">
             Incidents <span className="ml-2 text-slate-600">({incidents.length})</span>
           </h2>
-          <div className="flex items-center gap-2 font-mono text-xs text-slate-500">
-            <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[status]}`} aria-hidden />
-            {STATUS_LABEL[status]}
+          <div className="flex items-center gap-3">
+            {incidents.length > 0 && (
+              <button
+                onClick={clearAll}
+                disabled={clearing}
+                className="font-mono text-[11px] text-slate-500 transition hover:text-red-300 disabled:opacity-50"
+                title="Wipe all incidents for a clean demo replay"
+              >
+                {clearing ? 'clearing…' : 'clear all'}
+              </button>
+            )}
+            <div className="flex items-center gap-2 font-mono text-xs text-slate-500">
+              <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[status]}`} aria-hidden />
+              {STATUS_LABEL[status]}
+            </div>
           </div>
         </div>
         {!ready ? (

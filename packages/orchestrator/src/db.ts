@@ -95,6 +95,14 @@ export class IncidentRepository {
     return row.n;
   }
 
+  // Demo-reset: wipe every incident. Publishes a 'reset' event so SSE
+  // subscribers can drop their local caches in lockstep.
+  clearAll(): number {
+    const info = this.db.prepare('DELETE FROM incidents').run();
+    this.events.publishReset();
+    return info.changes;
+  }
+
   close(): void {
     this.db.close();
   }

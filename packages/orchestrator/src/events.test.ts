@@ -29,8 +29,24 @@ describe('IncidentEventBus', () => {
     expect(events).toHaveLength(2);
     expect(events[0]?.kind).toBe('created');
     expect(events[1]?.kind).toBe('updated');
-    expect(events[0]?.incident.id).toBe('inc-1');
-    expect(events[0]?.at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    const first = events[0];
+    if (first?.kind !== 'reset') {
+      expect(first?.incident.id).toBe('inc-1');
+      expect(first?.at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    }
+  });
+
+  it('publishes a reset event with no incident payload', () => {
+    const bus = new IncidentEventBus();
+    const events: IncidentEvent[] = [];
+    bus.subscribe((e) => events.push(e));
+
+    bus.publishReset();
+
+    expect(events).toHaveLength(1);
+    expect(events[0]?.kind).toBe('reset');
+    // Reset events deliberately have no incident attached.
+    expect((events[0] as { incident?: unknown }).incident).toBeUndefined();
   });
 
   it('fans events out to every subscriber', () => {

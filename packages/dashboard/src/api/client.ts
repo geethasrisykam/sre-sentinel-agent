@@ -79,6 +79,12 @@ export const api = {
     });
   },
 
+  async clearAllIncidents(): Promise<{ ok: true; deleted: number }> {
+    return request<{ ok: true; deleted: number }>('/api/incidents', {
+      method: 'DELETE',
+    });
+  },
+
   async decide(
     incidentId: string,
     decision: 'approve' | 'reject',
