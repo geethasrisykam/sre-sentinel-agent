@@ -1,11 +1,55 @@
 # Deployment
 
-SRE Sentinel ships as two services:
+SRE Sentinel has two supported deployment paths.
+
+## Path A — Google Cloud (Cloud Run + Firebase Hosting)
+
+The original architecture:
 
 - **orchestrator** → Cloud Run (Docker image built from `infra/orchestrator/Dockerfile`)
 - **dashboard** → Firebase Hosting (static Vite build, with `/api/**` rewritten to the Cloud Run service)
 
 The dashboard and the orchestrator share an origin in production thanks to the Firebase Hosting rewrite, so the session cookie and the SSE stream just work — no CORS, no cross-origin gymnastics.
+
+## Path B — Fly.io (single combined image)
+
+Backup path that doesn't require GCP billing. A single Fly machine runs the orchestrator AND serves the built dashboard from the same origin via `@fastify/static`.
+
+- Single Dockerfile (`infra/orchestrator/Dockerfile.fly`) bundles both
+- Single URL (e.g. `https://sre-sentinel.fly.dev`) for dashboard + API + SSE
+- Persistent SQLite via a Fly volume
+- Total cost: ~$2/month at the smallest VM size, often covered by Fly's free credits
+- Triggered by setting `DASHBOARD_DIST_PATH` env var, which the Fly Dockerfile bakes in. Cloud Run path leaves it unset and serves dashboard from Firebase as before.
+
+Deploy (after `flyctl auth login` and creating the Fly account):
+
+```powershell
+# From repo root
+flyctl launch --config infra/orchestrator/fly.toml --dockerfile infra/orchestrator/Dockerfile.fly --no-deploy
+# (accept defaults — name "sre-sentinel", region "sin", no postgres, no upstash)
+
+# Push secrets (same values you put in .env.local)
+flyctl secrets set `
+  GEMINI_API_KEY="..." `
+  DASHBOARD_SESSION_SECRET="..." `
+  DASHBOARD_DEMO_PASSWORD="..." `
+  WEBHOOK_TOKEN="..."
+
+# Persistent volume for SQLite
+flyctl volumes create sentinel_data --size 1 --region sin
+
+# Deploy
+flyctl deploy --config infra/orchestrator/fly.toml --dockerfile infra/orchestrator/Dockerfile.fly
+
+# Get the URL
+flyctl status
+```
+
+When done, the app is live at `https://<app-name>.fly.dev` — log in with the demo password and the full SSE flow works exactly like the local dev experience.
+
+---
+
+Everything below covers the GCP path.
 
 ## One-time setup
 

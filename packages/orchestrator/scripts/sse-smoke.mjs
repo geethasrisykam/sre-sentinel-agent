@@ -2,8 +2,13 @@
 // webhook, and prints the first few stream events. Exits when an
 // AWAITING_APPROVAL or terminal state is observed, or after a hard timeout.
 //
-// Run after starting the orchestrator:
+// Local (default):
 //   node packages/orchestrator/dist/index.js   (in another terminal)
+//   node packages/orchestrator/scripts/sse-smoke.mjs
+//
+// Hosted (Fly.io / Cloud Run) — point at the live origin:
+//   $env:ORCH_BASE_URL = "https://sre-sentinel.fly.dev"
+//   $env:DASHBOARD_DEMO_PASSWORD = "<the password you set in secrets>"
 //   node packages/orchestrator/scripts/sse-smoke.mjs
 
 const ORCH = process.env.ORCH_BASE_URL ?? 'http://localhost:8080';

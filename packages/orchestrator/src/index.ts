@@ -1,6 +1,9 @@
 import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
 import sensible from '@fastify/sensible';
+import fastifyStatic from '@fastify/static';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { loadConfig } from './config.js';
 import { setLogLevel, log } from './logger.js';
 import { IncidentRepository } from './db.js';
@@ -73,6 +76,31 @@ async function main(): Promise<void> {
     sessionSecret: config.sessionSecret,
     webhookToken: config.webhookToken,
   });
+
+  // Combined-deploy mode (Fly.io path): if DASHBOARD_DIST_PATH points to a
+  // built dashboard, serve it as static files behind the API routes. This is
+  // how we ship a single-container hosted demo without needing a separate
+  // CDN. The Cloud Run + Firebase Hosting path leaves this env var unset and
+  // serves the dashboard from Firebase instead.
+  const dashboardDist = process.env.DASHBOARD_DIST_PATH?.trim();
+  if (dashboardDist) {
+    const dashboardAbs = resolve(dashboardDist);
+    if (!existsSync(dashboardAbs)) {
+      log.warn('dashboard.dist.missing', { path: dashboardAbs });
+    } else {
+      await app.register(fastifyStatic, { root: dashboardAbs, prefix: '/' });
+      // SPA fallback: any route the API didn't claim and that isn't an asset
+      // gets the dashboard's index.html so React Router (or future routing)
+      // works on hard refresh.
+      app.setNotFoundHandler((request, reply) => {
+        if (request.url.startsWith('/api/') || request.url === '/healthz') {
+          return reply.code(404).send({ error: 'not found' });
+        }
+        return reply.sendFile('index.html');
+      });
+      log.info('dashboard.static.ready', { root: dashboardAbs });
+    }
+  }
 
   const shutdown = async (signal: string) => {
     log.info('shutdown.start', { signal });

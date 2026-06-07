@@ -1,0 +1,70 @@
+# syntax=docker/dockerfile:1.7
+# Fly.io variant of the orchestrator image. Bundles the built dashboard so a
+# single Fly machine serves both the API and the static SPA from one origin,
+# sidestepping the CORS / SameSite cookie issues that come with split hosting.
+#
+# Build:
+#   flyctl deploy --dockerfile infra/orchestrator/Dockerfile.fly
+#
+# Production GCP path (Cloud Run + Firebase Hosting) keeps using the original
+# Dockerfile in this directory.
+
+# ──────────────────────────────────────────────────────────────────────────
+# Stage 1: builder. Full toolchain for native compiles + Vite build.
+# ──────────────────────────────────────────────────────────────────────────
+FROM node:20-bookworm AS builder
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/remediation-mcp/package.json ./packages/remediation-mcp/
+COPY packages/orchestrator/package.json ./packages/orchestrator/
+COPY packages/dashboard/package.json ./packages/dashboard/
+
+RUN npm ci --workspaces --include-workspace-root
+
+COPY tsconfig.base.json ./
+COPY packages/shared ./packages/shared
+COPY packages/remediation-mcp ./packages/remediation-mcp
+COPY packages/orchestrator ./packages/orchestrator
+COPY packages/dashboard ./packages/dashboard
+
+RUN npm run build --workspace @sre-sentinel/shared \
+ && npm run build --workspace @sre-sentinel/remediation-mcp \
+ && npm run build --workspace @sre-sentinel/orchestrator \
+ && npm run build --workspace @sre-sentinel/dashboard
+
+RUN npm prune --omit=dev --workspaces --include-workspace-root
+
+# ──────────────────────────────────────────────────────────────────────────
+# Stage 2: runtime.
+# ──────────────────────────────────────────────────────────────────────────
+FROM node:20-bookworm-slim AS runtime
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+# Tell the orchestrator where the dashboard's static bundle lives — this
+# triggers the combined-deploy mode in index.ts that wires up @fastify/static.
+ENV DASHBOARD_DIST_PATH=/app/packages/dashboard/dist
+
+COPY --from=builder /app/package.json /app/package-lock.json ./
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/packages/shared/package.json ./packages/shared/
+COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
+COPY --from=builder /app/packages/remediation-mcp/package.json ./packages/remediation-mcp/
+COPY --from=builder /app/packages/remediation-mcp/dist ./packages/remediation-mcp/dist
+COPY --from=builder /app/packages/orchestrator/package.json ./packages/orchestrator/
+COPY --from=builder /app/packages/orchestrator/dist ./packages/orchestrator/dist
+COPY --from=builder /app/packages/dashboard/dist ./packages/dashboard/dist
+
+# Persistent SQLite directory — mounted as a Fly volume so audit history
+# survives machine restarts.
+RUN mkdir -p /app/packages/orchestrator/data \
+ && chown -R node:node /app/packages/orchestrator/data
+USER node
+
+EXPOSE 8080
+
+CMD ["node", "packages/orchestrator/dist/index.js"]

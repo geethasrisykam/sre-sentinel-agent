@@ -1,0 +1,54 @@
+# Fly.io app config for SRE Sentinel (combined orchestrator + dashboard).
+# Deploy from the repo root with:
+#   flyctl launch --config infra/orchestrator/fly.toml --dockerfile infra/orchestrator/Dockerfile.fly --no-deploy
+#   flyctl secrets set GEMINI_API_KEY=... DASHBOARD_SESSION_SECRET=... DASHBOARD_DEMO_PASSWORD=... WEBHOOK_TOKEN=...
+#   flyctl volumes create sentinel_data --size 1 --region sin
+#   flyctl deploy --config infra/orchestrator/fly.toml --dockerfile infra/orchestrator/Dockerfile.fly
+
+app = "sre-sentinel"
+primary_region = "sin"  # Singapore — closest to India
+
+[build]
+  dockerfile = "../../infra/orchestrator/Dockerfile.fly"
+
+[env]
+  NODE_ENV = "production"
+  ORCHESTRATOR_LOG_LEVEL = "info"
+  COOKIE_SECURE = "true"
+  GEMINI_MODEL = "gemini-2.5-flash"
+  # DASHBOARD_DIST_PATH is baked into the image; do NOT override here.
+
+# Single HTTP service exposes both the dashboard SPA and the /api/* routes
+# on the same origin. SSE works through Fly's edge proxy without extra config.
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # SSE clients hold long-lived connections. Keep at least one machine warm
+  # so the first webhook of a demo doesn't pay a cold-start penalty.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    timeout = "5s"
+    path = "/healthz"
+
+# Smallest paid VM ($1.94/mo) — fits orchestrator + bundled dashboard.
+# Fly's free credits cover this; if not, it's well under $5/month.
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  cpus = 1
+
+# Persistent volume for the SQLite audit log. Survives machine restarts.
+[mounts]
+  source = "sentinel_data"
+  destination = "/app/packages/orchestrator/data"
+
+# Process group — single web server.
+[processes]
+  app = "node packages/orchestrator/dist/index.js"

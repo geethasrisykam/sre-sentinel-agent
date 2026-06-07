@@ -99,9 +99,20 @@ SRE Sentinel uses the official Dynatrace MCP server (run via `npx`) for all obse
 | `getLogs` | Sample recent logs from the affected entity |
 | `getDeployments` | Correlate the incident with recent deployments — the most common root cause |
 
-## Roadmap
+## Hosted demo
 
-See the project board. Submission target: **2026-06-12**.
+Submission target: **2026-06-12**.
+
+Two deploy paths are scaffolded — pick whichever billing situation is friendliest:
+
+- **Google Cloud:** Cloud Run for the orchestrator, Firebase Hosting for the dashboard with `/api/**` rewritten back to Cloud Run. See [infra/README.md](infra/README.md) section "Path A".
+- **Fly.io:** single combined image (orchestrator + bundled dashboard) on one Fly machine. Sidesteps cross-origin cookie/CORS issues by sharing an origin. See [infra/README.md](infra/README.md) section "Path B".
+
+## Submission
+
+- **One-page writeup:** [docs/SUBMISSION.md](docs/SUBMISSION.md)
+- **Architecture deep-dive:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- **Demo recording script:** [docs/DEMO.md](docs/DEMO.md)
 
 ## License
 
