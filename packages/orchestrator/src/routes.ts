@@ -307,12 +307,44 @@ async function runDiagnosis(deps: Deps, incident: IncidentRecord): Promise<void>
     incident.state = 'FAILED';
     incident.outcome = {
       success: false,
-      summary: err instanceof Error ? err.message : String(err),
+      summary: humaniseAgentError(err),
       durationMs: Date.now() - started,
     };
     incident.updatedAt = new Date().toISOString();
     deps.repo.update(incident);
   }
+}
+
+// The Gemini SDK throws ApiError with a JSON-stringified body in the message.
+// That's great for the audit log but ugly when surfaced as the dashboard's
+// "Failed in 5118ms — {...}" banner. Detect the common cases and produce a
+// short, human-readable summary; fall back to the raw message otherwise.
+function humaniseAgentError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  // Try to extract a Gemini API error body if one is embedded in the message.
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[0]) as { error?: { code?: number; message?: string; status?: string } };
+      const code = parsed.error?.code;
+      const status = parsed.error?.status;
+      if (code === 503 || status === 'UNAVAILABLE') {
+        return 'Gemini is rate-limiting us right now — try again in 30 seconds, or switch GEMINI_MODEL to gemini-2.5-pro for a less-loaded endpoint.';
+      }
+      if (code === 429 || status === 'RESOURCE_EXHAUSTED') {
+        return 'Hit the Gemini per-minute quota. Wait ~60 seconds and retry.';
+      }
+      if (code === 400 || status === 'INVALID_ARGUMENT') {
+        return `Gemini rejected the request: ${parsed.error?.message ?? 'invalid argument'}`;
+      }
+      if (parsed.error?.message) {
+        return `Gemini error (${code ?? status ?? 'unknown'}): ${parsed.error.message}`;
+      }
+    } catch {
+      // fall through to raw
+    }
+  }
+  return raw;
 }
 
 async function runRemediation(deps: Deps, incident: IncidentRecord): Promise<void> {
