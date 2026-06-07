@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { IncidentRecord } from '@sre-sentinel/shared';
-import { api, AuthRequiredError } from '../api/client';
+import { api, AuthRequiredError, ConflictError } from '../api/client';
 
 interface Props {
   incident: IncidentRecord;
@@ -16,6 +16,8 @@ const RISK_STYLES: Record<string, string> = {
 export function ApprovalPanel({ incident, onAuthLost }: Props) {
   const [pending, setPending] = useState<'approve' | 'reject' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  const [submittedDecision, setSubmittedDecision] = useState<'approve' | 'reject' | null>(null);
   const [editing, setEditing] = useState(false);
   const proposal = incident.proposedRemediation;
   const originalArgsText = proposal ? JSON.stringify(proposal.args, null, 2) : '';
@@ -27,6 +29,15 @@ export function ApprovalPanel({ incident, onAuthLost }: Props) {
     setArgsText(originalArgsText);
     setEditing(false);
   }, [originalArgsText]);
+
+  // Once SSE confirms the state has moved past AWAITING_APPROVAL, the
+  // "submitted" banner has done its job — drop it.
+  useEffect(() => {
+    if (incident.state !== 'AWAITING_APPROVAL' && submittedDecision !== null) {
+      setSubmittedDecision(null);
+      setInfo(null);
+    }
+  }, [incident.state, submittedDecision]);
 
   if (!proposal) {
     return (
@@ -41,6 +52,7 @@ export function ApprovalPanel({ incident, onAuthLost }: Props) {
 
   async function decide(decision: 'approve' | 'reject') {
     setError(null);
+    setInfo(null);
     let modifiedArgs: Record<string, unknown> | undefined;
     if (decision === 'approve' && dirty) {
       try {
@@ -57,9 +69,25 @@ export function ApprovalPanel({ incident, onAuthLost }: Props) {
     setPending(decision);
     try {
       await api.decide(incident.id, decision, 'Geethaa', modifiedArgs);
+      // Success — immediately confirm the action visually. SSE will then
+      // catch up and the panel will swap into the closed-decision view.
+      setSubmittedDecision(decision);
     } catch (err) {
-      if (err instanceof AuthRequiredError) onAuthLost();
-      else setError(err instanceof Error ? err.message : String(err));
+      if (err instanceof AuthRequiredError) {
+        onAuthLost();
+      } else if (err instanceof ConflictError) {
+        // The incident already moved past AWAITING_APPROVAL on the server
+        // (usually because a previous click landed first). Not a real error
+        // for the operator — show a soft info banner. SSE will refresh the
+        // visible state moments later.
+        setInfo(
+          err.serverState
+            ? `This incident already moved to ${err.serverState.toLowerCase()} — likely a previous click landed first. Refreshing…`
+            : 'This incident already moved past approval. Refreshing…',
+        );
+      } else {
+        setError(err instanceof Error ? err.message : String(err));
+      }
     } finally {
       setPending(null);
     }
@@ -171,21 +199,46 @@ export function ApprovalPanel({ incident, onAuthLost }: Props) {
         </div>
       )}
 
+      {info && (
+        <div className="mt-4 rounded-md border border-amber-900/60 bg-amber-950/40 px-3 py-2 text-sm text-amber-200">
+          {info}
+        </div>
+      )}
+
+      {submittedDecision && !info && (
+        <div className="mt-4 flex items-center gap-2 rounded-md border border-cyan-900/60 bg-cyan-950/40 px-3 py-2 text-sm text-cyan-200">
+          <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-cyan-400" />
+          {submittedDecision === 'approve'
+            ? 'Submitted — orchestrator is executing remediation now…'
+            : 'Submitted — rejection recorded.'}
+        </div>
+      )}
+
       {isAwaiting ? (
         <div className="mt-5 flex gap-3">
           <button
             onClick={() => decide('approve')}
-            disabled={pending !== null}
+            disabled={pending !== null || submittedDecision !== null}
             className="btn-success flex-1"
           >
-            {pending === 'approve' ? 'Approving…' : dirty ? 'Approve with edits' : 'Approve & execute'}
+            {pending === 'approve'
+              ? 'Approving…'
+              : submittedDecision === 'approve'
+                ? 'Submitted'
+                : dirty
+                  ? 'Approve with edits'
+                  : 'Approve & execute'}
           </button>
           <button
             onClick={() => decide('reject')}
-            disabled={pending !== null}
+            disabled={pending !== null || submittedDecision !== null}
             className="btn-danger flex-1"
           >
-            {pending === 'reject' ? 'Rejecting…' : 'Reject'}
+            {pending === 'reject'
+              ? 'Rejecting…'
+              : submittedDecision === 'reject'
+                ? 'Submitted'
+                : 'Reject'}
           </button>
         </div>
       ) : (
