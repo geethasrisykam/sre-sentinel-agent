@@ -93,10 +93,27 @@ export function IncidentList({ onOpen, onAuthLost }: Props) {
               <button
                 onClick={clearAll}
                 disabled={clearing}
-                className="font-mono text-[11px] text-slate-500 transition hover:text-red-300 disabled:opacity-50"
                 title="Wipe all incidents for a clean demo replay"
+                className="inline-flex items-center gap-1 rounded-md border border-slate-700 bg-slate-900/60 px-2.5 py-1 font-mono text-[11px] font-medium text-slate-400 transition hover:border-red-800 hover:bg-red-950/40 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {clearing ? 'clearing…' : 'clear all'}
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="h-3 w-3"
+                  aria-hidden
+                >
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                  <path d="M10 11v6" />
+                  <path d="M14 11v6" />
+                  <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                </svg>
+                {clearing ? 'Clearing…' : 'Clear all'}
               </button>
             )}
             <div className="flex items-center gap-2 font-mono text-xs text-slate-500">
