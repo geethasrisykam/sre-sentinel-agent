@@ -6,7 +6,7 @@
 # ──────────────────────────────────────────────────────────────────────────
 # Stage 1: builder. Full toolchain so native modules (better-sqlite3) compile.
 # ──────────────────────────────────────────────────────────────────────────
-FROM node:20-bookworm AS builder
+FROM node:22-bookworm AS builder
 
 WORKDIR /app
 
@@ -38,7 +38,7 @@ RUN npm prune --omit=dev --workspaces --include-workspace-root
 # ──────────────────────────────────────────────────────────────────────────
 # Stage 2: runtime. Slim image, non-root user, no build tools.
 # ──────────────────────────────────────────────────────────────────────────
-FROM node:20-bookworm-slim AS runtime
+FROM node:22-bookworm-slim AS runtime
 
 WORKDIR /app
 
