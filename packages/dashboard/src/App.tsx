@@ -4,6 +4,8 @@ import { IncidentStreamProvider } from './hooks/useIncidentStream';
 import { LoginScreen } from './components/LoginScreen';
 import { IncidentList } from './components/IncidentList';
 import { IncidentDetail } from './components/IncidentDetail';
+import { ThemeToggle } from './components/ThemeToggle';
+import { TourProvider, TourButton, TourOverlay } from './components/Tour';
 
 type AuthState = 'unknown' | 'authed' | 'anon';
 
@@ -41,7 +43,7 @@ export default function App() {
 
   if (auth === 'unknown') {
     return (
-      <div className="flex min-h-screen items-center justify-center text-sm text-slate-500">
+      <div className="flex min-h-screen items-center justify-center text-sm text-slate-500 dark:text-slate-400">
         Connecting to orchestrator…
       </div>
     );
@@ -52,38 +54,46 @@ export default function App() {
 
   return (
     <IncidentStreamProvider onAuthLost={handleAuthLost}>
-      <div className="min-h-screen">
-        <header className="scanline sticky top-0 z-10 border-b border-slate-800/80 bg-slate-950/80 backdrop-blur">
-          <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-            <div className="flex items-center gap-3">
-              <div className="h-7 w-7 rounded-md bg-gradient-to-br from-cyan-500 to-blue-600 shadow-md shadow-cyan-900/40" />
-              <div>
-                <div className="text-sm font-semibold text-slate-100">SRE Sentinel</div>
-                <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-cyan-400">
-                  Autonomous incident triage
+      <TourProvider>
+        <div className="min-h-screen">
+          <header className="scanline sticky top-0 z-10 border-b border-slate-200/80 bg-white/80 backdrop-blur dark:border-slate-800/80 dark:bg-slate-950/80">
+            <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+              <div className="flex items-center gap-3">
+                <div className="h-7 w-7 rounded-md bg-gradient-to-br from-cyan-500 to-blue-600 shadow-md shadow-cyan-900/40 dark:shadow-cyan-900/40" />
+                <div>
+                  <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">SRE Sentinel</div>
+                  <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-cyan-600 dark:text-cyan-400">
+                    Autonomous incident triage
+                  </div>
                 </div>
               </div>
+              <div className="flex items-center gap-2">
+                <TourButton />
+                <ThemeToggle />
+                <button onClick={logout} className="btn-secondary text-xs">Sign out</button>
+              </div>
             </div>
-            <button onClick={logout} className="btn-secondary text-xs">Sign out</button>
-          </div>
-        </header>
+          </header>
 
-        <main className="mx-auto max-w-6xl px-6 py-8">
-          {selectedId ? (
-            <IncidentDetail
-              incidentId={selectedId}
-              onBack={() => setSelectedId(null)}
-              onAuthLost={handleAuthLost}
-            />
-          ) : (
-            <IncidentList onOpen={setSelectedId} onAuthLost={handleAuthLost} />
-          )}
-        </main>
+          <main className="mx-auto max-w-6xl px-6 py-8">
+            {selectedId ? (
+              <IncidentDetail
+                incidentId={selectedId}
+                onBack={() => setSelectedId(null)}
+                onAuthLost={handleAuthLost}
+              />
+            ) : (
+              <IncidentList onOpen={setSelectedId} onAuthLost={handleAuthLost} />
+            )}
+          </main>
 
-        <footer className="mx-auto max-w-6xl px-6 pb-8 pt-4 text-center font-mono text-[10px] text-slate-700">
-          sre-sentinel · gemini agent + dynatrace mcp · hackathon build
-        </footer>
-      </div>
+          <footer className="mx-auto max-w-6xl px-6 pb-8 pt-4 text-center font-mono text-[10px] text-slate-400 dark:text-slate-700">
+            sre-sentinel · gemini agent + dynatrace mcp · hackathon build
+          </footer>
+
+          <TourOverlay />
+        </div>
+      </TourProvider>
     </IncidentStreamProvider>
   );
 }

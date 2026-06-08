@@ -41,46 +41,64 @@ export function IncidentDetail({ incidentId, onBack, onAuthLost }: Props) {
   if (error) {
     return (
       <div className="glass-card p-5">
-        <div className="text-sm text-red-300">{error}</div>
+        <div className="text-sm text-red-700 dark:text-red-300">{error}</div>
         <button onClick={onBack} className="btn-secondary mt-4">← Back</button>
       </div>
     );
   }
 
   if (!incident) {
-    return <div className="glass-card p-6 text-sm text-slate-500">Loading incident…</div>;
+    return (
+      <div className="glass-card p-6 text-sm text-slate-500 dark:text-slate-500">
+        Loading incident…
+      </div>
+    );
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 animate-fade-in">
       <div className="flex items-center justify-between">
         <button onClick={onBack} className="btn-secondary text-xs">← All incidents</button>
-        <code className="font-mono text-[11px] text-slate-600">{incident.id}</code>
+        <code className="font-mono text-[11px] text-slate-400 dark:text-slate-600">
+          {incident.id}
+        </code>
       </div>
 
       <div className="glass-card p-5">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <SeverityBadge severity={incident.severity} />
           <StateBadge state={incident.state} />
         </div>
-        <h1 className="mt-3 text-xl font-semibold text-slate-100">{incident.problemTitle}</h1>
-        <div className="mt-1 font-mono text-xs text-slate-500">
-          {incident.affectedEntity} · {incident.problemId} · received {new Date(incident.receivedAt).toLocaleString()}
+        <h1 className="mt-3 text-xl font-semibold text-slate-900 dark:text-slate-100">
+          {incident.problemTitle}
+        </h1>
+        <div className="mt-1 font-mono text-xs text-slate-500 dark:text-slate-500">
+          {incident.affectedEntity} · {incident.problemId} · received{' '}
+          {new Date(incident.receivedAt).toLocaleString()}
         </div>
         {incident.outcome && (
-          <div className={`mt-4 rounded border px-3 py-2 text-sm ${
-            incident.outcome.success
-              ? 'border-emerald-800 bg-emerald-950/40 text-emerald-200'
-              : 'border-red-800 bg-red-950/40 text-red-200'
-          }`}>
-            <span className="font-semibold">{incident.outcome.success ? 'Resolved' : 'Failed'}</span> in {incident.outcome.durationMs}ms — {incident.outcome.summary}
+          <div
+            className={`mt-4 rounded border px-3 py-2 text-sm animate-slide-up ${
+              incident.outcome.success
+                ? 'border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200'
+                : 'border-red-300 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200'
+            }`}
+          >
+            <span className="font-semibold">
+              {incident.outcome.success ? 'Resolved' : 'Failed'}
+            </span>{' '}
+            in {incident.outcome.durationMs}ms — {incident.outcome.summary}
           </div>
         )}
       </div>
 
       <div className="grid gap-5 lg:grid-cols-2">
-        <ReasoningTimeline turns={incident.agentTurns} />
-        <ApprovalPanel incident={incident} onAuthLost={onAuthLost} />
+        <div data-tour="timeline">
+          <ReasoningTimeline turns={incident.agentTurns} />
+        </div>
+        <div data-tour="approval">
+          <ApprovalPanel incident={incident} onAuthLost={onAuthLost} />
+        </div>
       </div>
     </div>
   );
