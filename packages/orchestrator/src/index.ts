@@ -7,7 +7,6 @@ import { resolve } from 'node:path';
 import { loadConfig } from './config.js';
 import { setLogLevel, log } from './logger.js';
 import { IncidentRepository } from './db.js';
-import { GeminiClient } from './agent/gemini.js';
 import { AgentRunner } from './agent/runner.js';
 import { MockDiagnosisAdapter } from './agent/mock-diagnosis.js';
 import { DynatraceMcpAdapter } from './agent/dynatrace-mcp-adapter.js';
@@ -40,7 +39,6 @@ async function main(): Promise<void> {
   });
 
   const repo = new IncidentRepository(config.databasePath);
-  const gemini = new GeminiClient(config.geminiApiKey, config.geminiModel);
 
   const diagnosis: DiagnosisAdapter =
     config.diagnosisAdapter === 'dynatrace'
@@ -52,7 +50,8 @@ async function main(): Promise<void> {
   if (diagnosis.connect) await diagnosis.connect();
   log.info('diagnosis.adapter.ready', { kind: config.diagnosisAdapter });
 
-  const agent = new AgentRunner(gemini, diagnosis);
+  const agent = new AgentRunner(config.geminiApiKey, config.geminiModel, diagnosis);
+  log.info('adk.agent.ready', { model: config.geminiModel });
   const remediation = new RemediationMcpClient(
     config.remediationMcpCommand,
     config.remediationMcpArgs,
