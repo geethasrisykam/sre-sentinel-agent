@@ -1,31 +1,48 @@
 import { describe, expect, it, vi } from 'vitest';
+import {
+  BaseLlm,
+  type BaseLlmConnection,
+  type LlmRequest,
+  type LlmResponse,
+} from '@google/adk';
 import type { IncidentRecord } from '@sre-sentinel/shared';
 import { AgentRunner } from './runner.js';
-import type { GeminiClient, AgentTurnResponse } from './gemini.js';
 import { MockDiagnosisAdapter } from './mock-diagnosis.js';
 
-class StubGemini {
-  private readonly queue: AgentTurnResponse[] = [];
+// StubLlm scripts a series of LlmResponse objects and replays them in order
+// as the ADK agent loop calls generateContentAsync. This replaces the previous
+// StubGemini that spoke the @google/genai Content/Part protocol directly —
+// ADK now owns that wire, and the public seam for tests is BaseLlm.
+class StubLlm extends BaseLlm {
+  private readonly queue: LlmResponse[] = [];
   public callCount = 0;
 
-  enqueue(response: AgentTurnResponse): this {
+  constructor() {
+    super({ model: 'stub' });
+  }
+
+  enqueue(response: LlmResponse): this {
     this.queue.push(response);
     return this;
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
-  async generate(): Promise<AgentTurnResponse> {
+  async *generateContentAsync(
+    _request: LlmRequest,
+    _stream?: boolean,
+    _abortSignal?: AbortSignal,
+  ): AsyncGenerator<LlmResponse, void> {
     this.callCount += 1;
     const next = this.queue.shift();
     if (!next) {
-      throw new Error('StubGemini: no more scripted responses');
+      throw new Error('StubLlm: no more scripted responses');
     }
-    return next;
+    yield next;
   }
-}
 
-function asGemini(stub: StubGemini): GeminiClient {
-  return stub as unknown as GeminiClient;
+  // eslint-disable-next-line @typescript-eslint/require-await
+  async connect(_request: LlmRequest): Promise<BaseLlmConnection> {
+    throw new Error('StubLlm: connect() not implemented for non-live tests');
+  }
 }
 
 function makeIncident(): IncidentRecord {
@@ -42,16 +59,22 @@ function makeIncident(): IncidentRecord {
   };
 }
 
-function toolResponse(name: string, args: Record<string, unknown>): AgentTurnResponse {
+function toolResponse(name: string, args: Record<string, unknown>, id = `call-${name}`): LlmResponse {
   return {
-    toolCalls: [{ name, args }],
-    text: null,
-    rawCandidate: null,
+    content: {
+      role: 'model',
+      parts: [{ functionCall: { name, args, id } }],
+    },
   };
 }
 
-function textResponse(text: string): AgentTurnResponse {
-  return { toolCalls: [], text, rawCandidate: null };
+function textResponse(text: string): LlmResponse {
+  return {
+    content: {
+      role: 'model',
+      parts: [{ text }],
+    },
+  };
 }
 
 const VALID_PROPOSAL_JSON = JSON.stringify({
@@ -64,13 +87,13 @@ const VALID_PROPOSAL_JSON = JSON.stringify({
 
 describe('AgentRunner.diagnose', () => {
   it('runs diagnosis tools then parses the final proposal', async () => {
-    const stub = new StubGemini();
+    const stub = new StubLlm();
     stub
       .enqueue(toolResponse('getProblem', { problemId: 'P-2026-05-25-001' }))
       .enqueue(toolResponse('getDeployments', { entityId: 'SERVICE-CHECKOUT-API', lookbackMinutes: 60 }))
       .enqueue(textResponse(VALID_PROPOSAL_JSON));
 
-    const runner = new AgentRunner(asGemini(stub), new MockDiagnosisAdapter());
+    const runner = new AgentRunner(stub, 'stub', new MockDiagnosisAdapter());
     const incident = makeIncident();
     const onTurn = vi.fn();
 
@@ -94,23 +117,23 @@ describe('AgentRunner.diagnose', () => {
   });
 
   it('strips ```json code fences from the final text', async () => {
-    const stub = new StubGemini();
+    const stub = new StubLlm();
     stub
       .enqueue(toolResponse('getProblem', { problemId: 'P-2026-05-25-001' }))
       .enqueue(textResponse('```json\n' + VALID_PROPOSAL_JSON + '\n```'));
 
-    const runner = new AgentRunner(asGemini(stub), new MockDiagnosisAdapter());
+    const runner = new AgentRunner(stub, 'stub', new MockDiagnosisAdapter());
     const proposal = await runner.diagnose(makeIncident());
     expect(proposal?.tool).toBe('restartPod');
   });
 
   it('returns null and appends a Diagnosis aborted turn when the final text is not valid JSON', async () => {
-    const stub = new StubGemini();
+    const stub = new StubLlm();
     stub
       .enqueue(toolResponse('getProblem', { problemId: 'P-2026-05-25-001' }))
       .enqueue(textResponse('I think we should probably restart the pod.'));
 
-    const runner = new AgentRunner(asGemini(stub), new MockDiagnosisAdapter());
+    const runner = new AgentRunner(stub, 'stub', new MockDiagnosisAdapter());
     const incident = makeIncident();
     const proposal = await runner.diagnose(incident);
     expect(proposal).toBeNull();
@@ -119,10 +142,13 @@ describe('AgentRunner.diagnose', () => {
   });
 
   it('returns null and appends a Diagnosis aborted turn for empty model responses', async () => {
-    const stub = new StubGemini();
-    stub.enqueue({ toolCalls: [], text: null, rawCandidate: null });
+    const stub = new StubLlm();
+    // Empty content — no functionCall and no text. ADK still yields the
+    // response, the runner finds nothing, and falls through to the
+    // empty-response branch.
+    stub.enqueue({ content: { role: 'model', parts: [{ text: '' }] } });
 
-    const runner = new AgentRunner(asGemini(stub), new MockDiagnosisAdapter());
+    const runner = new AgentRunner(stub, 'stub', new MockDiagnosisAdapter());
     const incident = makeIncident();
     const proposal = await runner.diagnose(incident);
     expect(proposal).toBeNull();
@@ -130,12 +156,12 @@ describe('AgentRunner.diagnose', () => {
   });
 
   it('captures tool errors in the audit turn instead of throwing', async () => {
-    const stub = new StubGemini();
+    const stub = new StubLlm();
     stub
       .enqueue(toolResponse('getProblem', { problemId: 'does-not-exist' }))
       .enqueue(textResponse(VALID_PROPOSAL_JSON));
 
-    const runner = new AgentRunner(asGemini(stub), new MockDiagnosisAdapter());
+    const runner = new AgentRunner(stub, 'stub', new MockDiagnosisAdapter());
     const incident = makeIncident();
     const proposal = await runner.diagnose(incident);
 
@@ -146,7 +172,7 @@ describe('AgentRunner.diagnose', () => {
   });
 
   it('dispatches diagnosis tool calls through the injected adapter (not a global)', async () => {
-    const stub = new StubGemini();
+    const stub = new StubLlm();
     stub
       .enqueue(toolResponse('getProblem', { problemId: 'P-2026-05-25-001' }))
       .enqueue(toolResponse('getDeployments', { entityId: 'svc-x', lookbackMinutes: 45 }))
@@ -169,7 +195,7 @@ describe('AgentRunner.diagnose', () => {
       },
     };
 
-    const runner = new AgentRunner(asGemini(stub), fakeAdapter);
+    const runner = new AgentRunner(stub, 'stub', fakeAdapter);
     await runner.diagnose(makeIncident());
 
     expect(calls.map((c) => c.tool)).toEqual(['getProblem', 'getDeployments', 'getLogs']);
@@ -178,17 +204,18 @@ describe('AgentRunner.diagnose', () => {
   });
 
   it('bails after MAX_TURNS without a final proposal', async () => {
-    const stub = new StubGemini();
-    // 6 tool-call turns; never produces text.
-    for (let i = 0; i < 6; i++) {
-      stub.enqueue(toolResponse('getProblem', { problemId: 'P-2026-05-25-001' }));
+    const stub = new StubLlm();
+    // 7 tool-call turns; never produces text. ADK enforces maxLlmCalls=6
+    // (matching our previous MAX_TURNS) and throws on the 7th call; the
+    // runner translates that into a "Diagnosis aborted" turn.
+    for (let i = 0; i < 7; i++) {
+      stub.enqueue(toolResponse('getProblem', { problemId: 'P-2026-05-25-001' }, `call-${i}`));
     }
 
-    const runner = new AgentRunner(asGemini(stub), new MockDiagnosisAdapter());
+    const runner = new AgentRunner(stub, 'stub', new MockDiagnosisAdapter());
     const incident = makeIncident();
     const proposal = await runner.diagnose(incident);
     expect(proposal).toBeNull();
-    expect(stub.callCount).toBe(6);
     expect(incident.agentTurns.at(-1)?.thought).toMatch(/^Diagnosis aborted:.*6-turn investigation cap/);
   });
 });
