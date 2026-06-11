@@ -1,5 +1,6 @@
 import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
+import cors from '@fastify/cors';
 import sensible from '@fastify/sensible';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -87,6 +88,7 @@ async function main(): Promise<void> {
 
   process.stdout.write(`[startup:${process.pid}] creating fastify\n`);
   const app = Fastify({ logger: false });
+  await app.register(cors, { origin: true, credentials: true });
   process.stdout.write(`[startup:${process.pid}] registering cookie\n`);
   await app.register(cookie, { secret: config.sessionSecret });
   process.stdout.write(`[startup:${process.pid}] registering sensible\n`);
