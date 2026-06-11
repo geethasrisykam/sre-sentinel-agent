@@ -1,0 +1,3 @@
+# Probe-output dump from dynatrace-probe.mjs. May contain tenant-specific
+# telemetry; keep it out of version control.
+.dynatrace-probe-output.json

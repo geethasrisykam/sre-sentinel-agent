@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SRE Sentinel</title>
+    <!-- Pre-paint theme to avoid a flash of wrong colours on first load. -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('sentinel.theme');
+          var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          var theme = stored || (prefersDark ? 'dark' : 'light');
+          if (theme === 'dark') document.documentElement.classList.add('dark');
+        } catch (_) {
+          document.documentElement.classList.add('dark');
+        }
+      })();
+    </script>
+    <script type="module" crossorigin src="/assets/index-m2qa6_j7.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-eM_Af0nY.css">
+  </head>
+  <body class="antialiased">
+    <div id="root"></div>
+  </body>
+</html>
