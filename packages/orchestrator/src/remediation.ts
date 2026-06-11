@@ -23,7 +23,10 @@ export class RemediationMcpClient {
       { name: 'sre-sentinel-orchestrator', version: '0.1.0' },
       { capabilities: {} },
     );
-    await this.client.connect(this.transport);
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Remediation MCP connect timed out after 10s')), 10_000),
+    );
+    await Promise.race([this.client.connect(this.transport), timeout]);
     const tools = await this.client.listTools();
     log.info('remediation.mcp.connected', {
       tools: tools.tools.map((t) => t.name),

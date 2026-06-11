@@ -70,7 +70,13 @@ async function main(): Promise<void> {
     config.remediationMcpArgs,
     config.remediationMcpCwd,
   );
-  await remediation.connect();
+  try {
+    await remediation.connect();
+  } catch (err) {
+    log.warn('remediation.mcp.connect.failed', {
+      reason: err instanceof Error ? err.message : String(err),
+    });
+  }
 
   const app = Fastify({ logger: false });
   await app.register(cookie, { secret: config.sessionSecret });
