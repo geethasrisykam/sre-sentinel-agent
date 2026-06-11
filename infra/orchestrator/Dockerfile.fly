@@ -57,6 +57,7 @@ COPY --from=builder /app/packages/remediation-mcp/package.json ./packages/remedi
 COPY --from=builder /app/packages/remediation-mcp/dist ./packages/remediation-mcp/dist
 COPY --from=builder /app/packages/orchestrator/package.json ./packages/orchestrator/
 COPY --from=builder /app/packages/orchestrator/dist ./packages/orchestrator/dist
+COPY --from=builder /app/packages/orchestrator/node_modules ./packages/orchestrator/node_modules
 COPY --from=builder /app/packages/dashboard/dist ./packages/dashboard/dist
 
 # Persistent SQLite directory — mounted as a Fly volume so audit history
