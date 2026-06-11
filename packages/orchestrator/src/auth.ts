@@ -53,12 +53,13 @@ export function registerAuth(
     }
     const now = Date.now();
     const token = encode({ iat: now, exp: now + SESSION_TTL_MS }, config.sessionSecret);
+    const secure = config.cookieSecure ?? false;
     reply.setCookie(COOKIE_NAME, token, {
       httpOnly: true,
-      sameSite: 'lax',
-      // Driven by config.cookieSecure (NODE_ENV=production unless explicitly
-      // overridden via COOKIE_SECURE). Required behind HTTPS; breaks localhost.
-      secure: config.cookieSecure ?? false,
+      // SameSite=None required for cross-origin cookie (GitHub Pages → Railway).
+      // SameSite=None mandates Secure=true, so fall back to lax on plain HTTP.
+      sameSite: secure ? 'none' : 'lax',
+      secure,
       path: '/',
       maxAge: SESSION_TTL_MS / 1000,
     });
