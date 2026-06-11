@@ -1,7 +1,6 @@
 import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
 import sensible from '@fastify/sensible';
-import fastifyStatic from '@fastify/static';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { loadConfig } from './config.js';
@@ -124,6 +123,7 @@ async function main(): Promise<void> {
     } else {
       try {
         process.stdout.write(`[startup:${process.pid}] registering static\n`);
+        const { default: fastifyStatic } = await import('@fastify/static');
         await app.register(fastifyStatic, { root: dashboardAbs, prefix: '/' });
         process.stdout.write(`[startup:${process.pid}] static registered\n`);
         app.setNotFoundHandler((request, reply) => {
