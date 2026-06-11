@@ -5,6 +5,7 @@
     "dockerfilePath": "infra/orchestrator/Dockerfile.fly"
   },
   "deploy": {
+    "startCommand": "node packages/orchestrator/dist/index.js",
     "healthcheckPath": "/healthz",
     "healthcheckTimeout": 30,
     "restartPolicyType": "ON_FAILURE",
