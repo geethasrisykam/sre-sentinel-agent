@@ -16,6 +16,7 @@ import { registerAuth } from './auth.js';
 import { registerRoutes } from './routes.js';
 
 async function main(): Promise<void> {
+  process.stdout.write('[startup] loading config\n');
   const config = loadConfig();
   setLogLevel(config.logLevel);
 
@@ -38,7 +39,9 @@ async function main(): Promise<void> {
     process.exit(1);
   });
 
+  process.stdout.write('[startup] opening sqlite\n');
   const repo = new IncidentRepository(config.databasePath);
+  process.stdout.write('[startup] sqlite ready\n');
 
   let diagnosis: DiagnosisAdapter;
   if (config.diagnosisAdapter === 'dynatrace') {
@@ -63,16 +66,21 @@ async function main(): Promise<void> {
     log.info('diagnosis.adapter.ready', { kind: 'mock' });
   }
 
+  process.stdout.write('[startup] creating agent\n');
   const agent = new AgentRunner(config.geminiApiKey, config.geminiModel, diagnosis);
+  process.stdout.write('[startup] agent ready\n');
   log.info('adk.agent.ready', { model: config.geminiModel });
   const remediation = new RemediationMcpClient(
     config.remediationMcpCommand,
     config.remediationMcpArgs,
     config.remediationMcpCwd,
   );
+  process.stdout.write('[startup] connecting remediation mcp\n');
   try {
     await remediation.connect();
+    process.stdout.write('[startup] remediation mcp ready\n');
   } catch (err) {
+    process.stdout.write(`[startup] remediation mcp failed: ${err instanceof Error ? err.message : String(err)}\n`);
     log.warn('remediation.mcp.connect.failed', {
       reason: err instanceof Error ? err.message : String(err),
     });
@@ -132,7 +140,9 @@ async function main(): Promise<void> {
   process.on('SIGINT', () => void shutdown('SIGINT'));
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
 
+  process.stdout.write(`[startup] listening on port ${config.port}\n`);
   await app.listen({ port: config.port, host: '0.0.0.0' });
+  process.stdout.write(`[startup] orchestrator ready on port ${config.port}\n`);
   log.info('orchestrator.ready', { port: config.port, model: config.geminiModel });
 }
 
