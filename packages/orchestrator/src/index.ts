@@ -114,22 +114,28 @@ async function main(): Promise<void> {
   // CDN. The Cloud Run + Firebase Hosting path leaves this env var unset and
   // serves the dashboard from Firebase instead.
   const dashboardDist = process.env.DASHBOARD_DIST_PATH?.trim();
+  process.stdout.write(`[startup:${process.pid}] dashboard dist path: ${dashboardDist ?? 'unset'}\n`);
   if (dashboardDist) {
     const dashboardAbs = resolve(dashboardDist);
-    if (!existsSync(dashboardAbs)) {
+    const dashboardExists = existsSync(dashboardAbs);
+    process.stdout.write(`[startup:${process.pid}] dashboard abs: ${dashboardAbs} exists=${dashboardExists}\n`);
+    if (!dashboardExists) {
       log.warn('dashboard.dist.missing', { path: dashboardAbs });
     } else {
-      await app.register(fastifyStatic, { root: dashboardAbs, prefix: '/' });
-      // SPA fallback: any route the API didn't claim and that isn't an asset
-      // gets the dashboard's index.html so React Router (or future routing)
-      // works on hard refresh.
-      app.setNotFoundHandler((request, reply) => {
-        if (request.url.startsWith('/api/') || request.url === '/healthz') {
-          return reply.code(404).send({ error: 'not found' });
-        }
-        return reply.sendFile('index.html');
-      });
-      log.info('dashboard.static.ready', { root: dashboardAbs });
+      try {
+        process.stdout.write(`[startup:${process.pid}] registering static\n`);
+        await app.register(fastifyStatic, { root: dashboardAbs, prefix: '/' });
+        process.stdout.write(`[startup:${process.pid}] static registered\n`);
+        app.setNotFoundHandler((request, reply) => {
+          if (request.url.startsWith('/api/') || request.url === '/healthz') {
+            return reply.code(404).send({ error: 'not found' });
+          }
+          return reply.sendFile('index.html');
+        });
+        log.info('dashboard.static.ready', { root: dashboardAbs });
+      } catch (err) {
+        process.stdout.write(`[startup:${process.pid}] static registration FAILED: ${err instanceof Error ? err.message : String(err)}\n`);
+      }
     }
   }
 
