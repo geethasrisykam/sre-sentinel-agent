@@ -17,7 +17,8 @@
     "dev:remediation-mcp": "npm --workspace @sre-sentinel/remediation-mcp run dev",
     "dev:dashboard": "npm --workspace @sre-sentinel/dashboard run dev",
     "lint": "npm run lint --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present"
+    "test": "npm run test --workspaces --if-present",
+    "start": "node packages/orchestrator/dist/index.js"
   },
   "devDependencies": {
     "typescript": "^5.5.4",
