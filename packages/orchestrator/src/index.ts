@@ -158,6 +158,8 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
+  const msg = err instanceof Error ? `${err.message}\n${err.stack ?? ''}` : String(err);
+  process.stderr.write(`[FATAL] orchestrator startup failed: ${msg}\n`);
   log.error('orchestrator.fatal', { error: err instanceof Error ? err.message : String(err) });
   process.exit(1);
 });
