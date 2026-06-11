@@ -118,7 +118,7 @@ export function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
                 Welcome back
               </h2>
               <p className="text-sm text-slate-600 dark:text-slate-400">
-                Enter the demo password to access the operator console.
+                Enter your password to access the operator console.
               </p>
             </div>
 
@@ -127,7 +127,7 @@ export function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
                 htmlFor="password"
                 className="block text-xs font-medium uppercase tracking-wider text-slate-600 dark:text-slate-400"
               >
-                Demo password
+                Password
               </label>
               <div className="relative">
                 <input
@@ -195,7 +195,7 @@ export function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
             </button>
 
             <p className="pt-1 text-center text-[11px] text-slate-500 dark:text-slate-500">
-              Single shared password — hackathon demo build.
+              SRE Sentinel — Autonomous Incident Triage
             </p>
           </form>
         </div>

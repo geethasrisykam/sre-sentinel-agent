@@ -4,6 +4,15 @@
 
 Built for the **Google Cloud Rapid Agent Hackathon** (Dynatrace partner track).
 
+## Live Demo
+
+| | URL |
+|---|---|
+| **Dashboard** | https://geethasrisykam.github.io/sre-sentinel-agent/ |
+| **API** | https://sre-sentinelorchestrator-production.up.railway.app/healthz |
+
+Password available on request (contact via Devpost).
+
 ## What it does
 
 When a Dynatrace problem fires:
@@ -24,16 +33,16 @@ The agent does the triage work upfront so the human only spends 5 seconds on the
 ┌─────────────────────────────────────────────────────────────┐
 │  Dashboard (React + Vite + TypeScript)                      │
 │  Live problem feed · Reasoning timeline · Approval modal    │
-│  Hosted: Firebase Hosting                                   │
+│  Hosted: GitHub Pages                                       │
 └──────────────────────┬──────────────────────────────────────┘
                        │ REST + SSE
 ┌──────────────────────▼──────────────────────────────────────┐
 │  Orchestrator (Node + Fastify + TypeScript)                 │
 │  • Dynatrace webhook ingress                                │
-│  • Vertex AI / Agent Builder client                         │
-│  • SQLite (dev) / Firestore (prod) audit log                │
+│  • Google ADK + Gemini 2.5 Flash agent loop                 │
+│  • SQLite audit log                                         │
 │  • Approval gate with SSE stream                            │
-│  Hosted: Cloud Run                                          │
+│  Hosted: Railway                                            │
 └──────────┬──────────────────────────┬───────────────────────┘
            │                          │
 ┌──────────▼─────────────┐  ┌─────────▼────────────────────┐
@@ -48,8 +57,8 @@ The agent does the triage work upfront so the human only spends 5 seconds on the
            ▲
            │
 ┌──────────┴──────────────────────────────────────────────────┐
-│  Google Cloud Agent Builder + Gemini 3                      │
-│  Managed orchestration, tool calling, reasoning             │
+│  Google ADK + Gemini 2.5 Flash                              │
+│  Agent loop, tool calling, multi-step reasoning             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
