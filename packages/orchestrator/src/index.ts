@@ -40,15 +40,28 @@ async function main(): Promise<void> {
 
   const repo = new IncidentRepository(config.databasePath);
 
-  const diagnosis: DiagnosisAdapter =
-    config.diagnosisAdapter === 'dynatrace'
-      ? new DynatraceMcpAdapter({
-          environmentUrl: config.dynatraceEnvironmentUrl,
-          apiToken: config.dynatraceApiToken,
-        })
-      : new MockDiagnosisAdapter();
-  if (diagnosis.connect) await diagnosis.connect();
-  log.info('diagnosis.adapter.ready', { kind: config.diagnosisAdapter });
+  let diagnosis: DiagnosisAdapter;
+  if (config.diagnosisAdapter === 'dynatrace') {
+    const adapter = new DynatraceMcpAdapter({
+      environmentUrl: config.dynatraceEnvironmentUrl,
+      apiToken: config.dynatraceApiToken,
+    });
+    try {
+      if (adapter.connect) await adapter.connect();
+      diagnosis = adapter;
+      log.info('diagnosis.adapter.ready', { kind: 'dynatrace' });
+    } catch (err) {
+      log.warn('diagnosis.adapter.fallback', {
+        reason: err instanceof Error ? err.message : String(err),
+        fallback: 'mock',
+      });
+      diagnosis = new MockDiagnosisAdapter();
+      log.info('diagnosis.adapter.ready', { kind: 'mock' });
+    }
+  } else {
+    diagnosis = new MockDiagnosisAdapter();
+    log.info('diagnosis.adapter.ready', { kind: 'mock' });
+  }
 
   const agent = new AgentRunner(config.geminiApiKey, config.geminiModel, diagnosis);
   log.info('adk.agent.ready', { model: config.geminiModel });
